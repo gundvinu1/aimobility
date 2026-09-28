@@ -4,15 +4,7 @@
 // They will be populated when the respective modules are implemented.
 // =============================================================================
 
-/**
- * @placeholder - Roles will be defined in the Authentication + RBAC module
- */
-export const ROLES = {} as const;
-
-/**
- * @placeholder - Permissions will be defined in the Authentication + RBAC module
- */
-export const PERMISSIONS = {} as const;
+// NOTE: ROLES and PERMISSIONS moved to auth.ts (Module 2)
 
 /**
  * @placeholder - Booking status values will be defined in the Booking module

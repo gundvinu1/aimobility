@@ -6,3 +6,4 @@
 export * from './app';
 export * from './api';
 export * from './placeholders';
+export * from './auth';

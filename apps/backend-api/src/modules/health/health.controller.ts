@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-
 import { HealthService } from './health.service';
+import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('Health')
 @Controller('health')
@@ -12,6 +12,7 @@ export class HealthController {
    * Liveness probe — confirms the application process is running.
    * Does NOT check infrastructure dependencies.
    */
+  @Public()
   @Get('live')
   @ApiOperation({ summary: 'Liveness check', description: 'Returns OK if the application is running.' })
   @ApiResponse({ status: 200, description: 'Application is alive' })
@@ -23,6 +24,7 @@ export class HealthController {
    * Readiness probe — confirms all required dependencies are reachable.
    * Used by load balancers and orchestrators to route traffic.
    */
+  @Public()
   @Get('ready')
   @ApiOperation({ summary: 'Readiness check', description: 'Returns OK if all dependencies (DB, Redis) are reachable.' })
   @ApiResponse({ status: 200, description: 'Application is ready' })

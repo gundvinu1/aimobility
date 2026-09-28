@@ -8,9 +8,15 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
   API_URL: z.string().default('http://localhost:4000'),
   WEB_URL: z.string().default('http://localhost:3000'),
-  // JWT placeholders - will be validated strictly when auth module is added
-  JWT_SECRET: z.string().default('placeholder-change-in-auth-module'),
-  JWT_REFRESH_SECRET: z.string().default('placeholder-change-in-auth-module'),
+  // JWT — access token
+  JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET must be at least 32 characters'),
+  JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
+  // JWT — refresh token
+  JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 characters'),
+  JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
+  // Legacy aliases (optional — kept for backward compat)
+  JWT_SECRET: z.string().optional(),
+  JWT_EXPIRES_IN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

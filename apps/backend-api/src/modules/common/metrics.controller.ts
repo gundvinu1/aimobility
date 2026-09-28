@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('Metrics')
 @Controller('metrics')
@@ -8,6 +9,7 @@ export class MetricsController {
    * Basic process metrics endpoint.
    * Future: integrate Prometheus/OpenTelemetry in the Observability module.
    */
+  @Public()
   @Get()
   @ApiOperation({ summary: 'System metrics', description: 'Returns basic process and runtime metrics.' })
   @ApiResponse({ status: 200, description: 'Metrics data' })
