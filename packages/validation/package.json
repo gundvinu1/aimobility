@@ -1,0 +1,28 @@
+{
+  "name": "@ai-mos/validation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared validation schemas for AI-MOS",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@ai-mos/config": "workspace:*",
+    "@types/node": "^22.5.1",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.5.4"
+  }
+}
