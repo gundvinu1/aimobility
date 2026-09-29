@@ -25,7 +25,7 @@
 
 ```bash
 # 1. Clone & enter
-git clone https://github.com/your-org/ai-mos.git && cd ai-mos
+git clone https://github.com/gundvinu1/aimobility.git && cd aimobility
 
 # 2. Copy env
 cp .env.example .env
