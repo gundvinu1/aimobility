@@ -1,0 +1,20 @@
+{
+  "recommendations": [
+    // Tailwind CSS — autocomplete + suppresses @tailwind/@apply warnings
+    "bradlc.vscode-tailwindcss",
+    // Prisma schema syntax + formatting
+    "Prisma.prisma",
+    // ESLint
+    "dbaeumer.vscode-eslint",
+    // Prettier
+    "esbenp.prettier-vscode",
+    // NestJS snippets
+    "ashinzekene.nestjs",
+    // DotENV syntax highlighting
+    "mikestead.dotenv",
+    // Docker
+    "ms-azuretools.vscode-docker",
+    // GitLens
+    "eamodio.gitlens"
+  ]
+}

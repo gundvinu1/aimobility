@@ -1,0 +1,46 @@
+{
+  // ─── CSS Language Server ─────────────────────────────────────────────────────
+  // Suppress "Unknown at-rule" warnings for Tailwind CSS directives (@tailwind,
+  // @apply, @layer, @variants, @responsive, @screen). These are valid PostCSS
+  // directives processed at build time — the standard CSS language server does
+  // not know about them, but they work correctly in the compiled output.
+  "css.lint.unknownAtRules": "ignore",
+  "scss.lint.unknownAtRules": "ignore",
+
+  // ─── Tailwind IntelliSense ────────────────────────────────────────────────────
+  // If you have the "Tailwind CSS IntelliSense" VS Code extension installed,
+  // these settings give you autocomplete inside className strings.
+  "tailwindCSS.experimental.classRegex": [
+    ["clsx\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"],
+    ["cn\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"]
+  ],
+
+  // ─── File Associations ────────────────────────────────────────────────────────
+  // Treat globals.css as a Tailwind CSS file for proper highlighting.
+  "files.associations": {
+    "*.css": "tailwindcss"
+  },
+
+  // ─── Editor ──────────────────────────────────────────────────────────────────
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
+  // ─── TypeScript ───────────────────────────────────────────────────────────────
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  // ─── Prisma ───────────────────────────────────────────────────────────────────
+  "[prisma]": {
+    "editor.defaultFormatter": "Prisma.prisma",
+    "editor.formatOnSave": true
+  }
+}
