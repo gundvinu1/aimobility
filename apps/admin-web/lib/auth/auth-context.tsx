@@ -26,9 +26,24 @@ async function apiFetch<T>(
     ...options,
     headers: { ...headers, ...(options.headers as Record<string, string> ?? {}) },
   });
-  const json = (await res.json()) as { success: boolean; data?: T; error?: { message: string } };
-  if (!res.ok) throw new Error(json.error?.message ?? `Request failed: ${res.status}`);
-  return json.data as T;
+
+  const json = (await res.json()) as
+    | { success: boolean; data?: T; error?: { message: string } }
+    | T;
+
+  if (!res.ok) {
+    const errJson = json as { success: boolean; error?: { message: string } };
+    throw new Error(errJson.error?.message ?? `Request failed: ${res.status}`);
+  }
+
+  // Handle both:
+  //   { success: true, data: { ... } }  — standard envelope
+  //   { user, tokens, refreshToken }    — direct object (auth endpoints)
+  const wrapped = json as { success?: boolean; data?: T };
+  if (wrapped.success !== undefined && wrapped.data !== undefined) {
+    return wrapped.data as T;
+  }
+  return json as T;
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
