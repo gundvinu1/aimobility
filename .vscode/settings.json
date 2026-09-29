@@ -39,8 +39,12 @@
   "typescript.enablePromptUseWorkspaceTsdk": true,
 
   // ─── Prisma ───────────────────────────────────────────────────────────────────
+  // This project uses Prisma 5. The VS Code Prisma extension may show false
+  // positives about "url no longer supported" — that is a Prisma 7 warning
+  // that does NOT apply here. The schema is valid for Prisma ^5.17.0.
   "[prisma]": {
     "editor.defaultFormatter": "Prisma.prisma",
     "editor.formatOnSave": true
-  }
+  },
+  "prisma.schemaVersion": "5"
 }

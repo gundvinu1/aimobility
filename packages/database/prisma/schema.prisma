@@ -1,5 +1,9 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// AI-MOS Database Schema
+// Prisma version: ^5.17.0  (NOT Prisma 7)
+// The `url = env("DATABASE_URL")` syntax is valid in Prisma 5.
+// If your Prisma VS Code extension shows a warning about this line,
+// it means the extension is running a Prisma 7 linter — ignore it.
+// See: https://www.prisma.io/docs/orm/reference/prisma-schema-reference
 
 generator client {
   provider = "prisma-client-js"
