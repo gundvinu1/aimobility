@@ -19,7 +19,32 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import type { AuthUser } from './types/auth-user.type';
 import type { CurrentUserDto, AuthTokens } from '@ai-mos/types';
 import { ROLES, AUTH_AUDIT_EVENTS } from '@ai-mos/constants';
-import { UserStatus, Prisma } from '@prisma/client';
+
+// ─── Local types (independent of generated Prisma types) ────────────────────
+// These avoid IDE errors when the Prisma generated client hasn't been
+// picked up by the TypeScript language server yet.
+
+type UserStatusValue = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING_VERIFICATION';
+
+interface RoleWithPermissions {
+  name: string;
+  permissions: Array<{ permission: { name: string } }>;
+}
+
+interface UserWithRoles {
+  id: string;
+  email: string;
+  passwordHash: string;
+  firstName: string;
+  lastName: string;
+  status: UserStatusValue;
+  emailVerified: boolean;
+  createdAt: Date;
+  deletedAt: Date | null;
+  roles: Array<{ role: RoleWithPermissions }>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export interface AuthResponse {
   user: CurrentUserDto;
@@ -46,41 +71,34 @@ export class AuthService {
     dto: RegisterDto,
     meta: { ipAddress?: string; userAgent?: string; requestId?: string },
   ): Promise<AuthResponse> {
-    // Check for duplicate email
-    const existing = await this.db.user.findUnique({ where: { email: dto.email } });
+    const existing = await (this.db as unknown as UserDb).user.findUnique({ where: { email: dto.email } });
     if (existing) {
       throw new ConflictException('An account with this email already exists');
     }
 
     const passwordHash = await this.passwords.hash(dto.password);
 
-    // Get default CUSTOMER role
-    let defaultRole = await this.db.role.findUnique({ where: { name: ROLES.CUSTOMER } });
+    let defaultRole = await (this.db as unknown as RoleDb).role.findUnique({ where: { name: ROLES.CUSTOMER } });
     if (!defaultRole) {
-      // Create if seed hasn't run yet
-      defaultRole = await this.db.role.create({
+      defaultRole = await (this.db as unknown as RoleDb).role.create({
         data: { name: ROLES.CUSTOMER, description: 'Default customer role' },
       });
     }
 
-    // Create user + assign role atomically
-    const user = await this.db.user.create({
+    const user = await (this.db as unknown as UserDb).user.create({
       data: {
         email: dto.email,
         passwordHash,
         firstName: dto.firstName,
         lastName: dto.lastName,
-        status: UserStatus.ACTIVE,
+        status: 'ACTIVE' as UserStatusValue,
         roles: {
-          create: [{ roleId: defaultRole.id }],
+        create: [{ roleId: (defaultRole as { id: string }).id }],
         },
       },
-      include: {
-        roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
-      },
-    });
+      include: INCLUDE_ROLES,
+    }) as UserWithRoles;
 
-    // Audit log
     await this.audit({
       action: AUTH_AUDIT_EVENTS.REGISTER,
       entityType: 'User',
@@ -101,20 +119,16 @@ export class AuthService {
     dto: LoginDto,
     meta: { ipAddress?: string; userAgent?: string; requestId?: string },
   ): Promise<AuthResponse> {
-    const user = await this.db.user.findUnique({
+    const user = await (this.db as unknown as UserDb).user.findUnique({
       where: { email: dto.email },
-      include: {
-        roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
-      },
-    });
+      include: INCLUDE_ROLES,
+    }) as UserWithRoles | null;
 
-    // Constant-time: always verify even if user not found (dummy hash)
     const DUMMY_HASH = '$argon2id$v=19$m=65536,t=3,p=4$dummydummydummydummy$dummydummydummydummydummydummydummydummydummy';
     const hashToVerify = user ? user.passwordHash : DUMMY_HASH;
     const valid = await this.passwords.verify(hashToVerify, dto.password);
 
     if (!user || !valid || user.deletedAt) {
-      // Audit failed login (only if user exists to avoid email enumeration in logs)
       if (user) {
         await this.audit({
           action: AUTH_AUDIT_EVENTS.LOGIN_FAILED,
@@ -128,13 +142,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    if (user.status === UserStatus.SUSPENDED) {
-      throw new UnauthorizedException('Account is suspended');
-    }
-
-    if (user.status === UserStatus.INACTIVE) {
-      throw new UnauthorizedException('Account is inactive');
-    }
+    if (user.status === 'SUSPENDED') throw new UnauthorizedException('Account is suspended');
+    if (user.status === 'INACTIVE') throw new UnauthorizedException('Account is inactive');
 
     await this.audit({
       action: AUTH_AUDIT_EVENTS.LOGIN_SUCCESS,
@@ -220,16 +229,14 @@ export class AuthService {
   }
 
   // ─────────────────────────────────────────────────────
-  // ME — load current user
+  // ME
   // ─────────────────────────────────────────────────────
 
   async getMe(userId: string): Promise<CurrentUserDto> {
-    const user = await this.db.user.findUnique({
+    const user = await (this.db as unknown as UserDb).user.findUnique({
       where: { id: userId },
-      include: {
-        roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
-      },
-    });
+      include: INCLUDE_ROLES,
+    }) as UserWithRoles | null;
 
     if (!user || user.deletedAt) {
       throw new NotFoundException('User not found');
@@ -243,14 +250,12 @@ export class AuthService {
   // ─────────────────────────────────────────────────────
 
   async validateTokenUser(userId: string): Promise<AuthUser | null> {
-    const user = await this.db.user.findUnique({
+    const user = await (this.db as unknown as UserDb).user.findUnique({
       where: { id: userId },
-      include: {
-        roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
-      },
-    });
+      include: INCLUDE_ROLES,
+    }) as UserWithRoles | null;
 
-    if (!user || user.deletedAt || user.status === UserStatus.SUSPENDED || user.status === UserStatus.INACTIVE) {
+    if (!user || user.deletedAt || user.status === 'SUSPENDED' || user.status === 'INACTIVE') {
       return null;
     }
 
@@ -273,22 +278,18 @@ export class AuthService {
     dto: ChangePasswordDto,
     meta: { ipAddress?: string; userAgent?: string; requestId?: string },
   ): Promise<{ success: boolean }> {
-    const user = await this.db.user.findUnique({ where: { id: userId } });
+    const user = await (this.db as unknown as UserDb).user.findUnique({ where: { id: userId } }) as { passwordHash: string } | null;
     if (!user) throw new NotFoundException('User not found');
 
     const valid = await this.passwords.verify(user.passwordHash, dto.currentPassword);
-    if (!valid) {
-      throw new UnauthorizedException('Current password is incorrect');
-    }
+    if (!valid) throw new UnauthorizedException('Current password is incorrect');
 
     if (dto.currentPassword === dto.newPassword) {
       throw new BadRequestException('New password must be different from current password');
     }
 
     const newHash = await this.passwords.hash(dto.newPassword);
-    await this.db.user.update({ where: { id: userId }, data: { passwordHash: newHash } });
-
-    // Revoke all refresh sessions for security
+    await (this.db as unknown as UserDb).user.update({ where: { id: userId }, data: { passwordHash: newHash } });
     await this.sessions.revokeAllSessions(userId);
 
     await this.audit({
@@ -311,24 +312,22 @@ export class AuthService {
     dto: ForgotPasswordDto,
     meta: { ipAddress?: string; userAgent?: string; requestId?: string },
   ): Promise<{ message: string; developmentToken?: string }> {
-    const user = await this.db.user.findUnique({ where: { email: dto.email } });
+    const user = await (this.db as unknown as UserDb).user.findUnique({ where: { email: dto.email } }) as { id: string; deletedAt: Date | null } | null;
 
-    // Never reveal whether email exists
     if (!user || user.deletedAt) {
       return { message: 'If the email exists, a reset link will be sent.' };
     }
 
-    // Expire any existing tokens
-    await this.db.passwordReset.updateMany({
+    await (this.db as unknown as PasswordResetDb).passwordReset.updateMany({
       where: { userId: user.id, usedAt: null },
-      data: { usedAt: new Date() }, // mark as used (expired)
+      data: { usedAt: new Date() },
     });
 
     const rawToken = this.tokenService.generateOpaqueToken();
     const tokenHash = await this.tokenService.hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-    await this.db.passwordReset.create({
+    await (this.db as unknown as PasswordResetDb).passwordReset.create({
       data: { userId: user.id, tokenHash, expiresAt },
     });
 
@@ -337,12 +336,11 @@ export class AuthService {
       entityType: 'User',
       entityId: user.id,
       userId: user.id,
-      metadata: { email: user.email },
+      metadata: { email: dto.email },
       ...meta,
     });
 
-    // In production: send email. For dev: return token in response (never log it)
-    const isDev = process.env.NODE_ENV !== 'production';
+    const isDev = process.env['NODE_ENV'] !== 'production';
     return {
       message: 'If the email exists, a reset link will be sent.',
       ...(isDev && { developmentToken: rawToken }),
@@ -357,26 +355,25 @@ export class AuthService {
     dto: ResetPasswordDto,
     meta: { ipAddress?: string; userAgent?: string; requestId?: string },
   ): Promise<{ success: boolean }> {
-    // Find all active (unused, non-expired) reset tokens
-    const resets = await this.db.passwordReset.findMany({
-      where: { usedAt: null, expiresAt: { gt: new Date() } },
-    });
+    interface PasswordResetRow { id: string; userId: string; tokenHash: string; expiresAt: Date; usedAt: Date | null }
 
-    let matched: typeof resets[0] | null = null;
+    const resets = await (this.db as unknown as PasswordResetDb).passwordReset.findMany({
+      where: { usedAt: null, expiresAt: { gt: new Date() } },
+    }) as PasswordResetRow[];
+
+    let matched: PasswordResetRow | null = null;
     for (const reset of resets) {
       const isMatch = await this.tokenService.verifyTokenHash(reset.tokenHash, dto.token);
       if (isMatch) { matched = reset; break; }
     }
 
-    if (!matched) {
-      throw new BadRequestException('Invalid or expired reset token');
-    }
+    if (!matched) throw new BadRequestException('Invalid or expired reset token');
 
     const newHash = await this.passwords.hash(dto.newPassword);
 
-    await this.db.$transaction([
-      this.db.user.update({ where: { id: matched.userId }, data: { passwordHash: newHash } }),
-      this.db.passwordReset.update({ where: { id: matched.id }, data: { usedAt: new Date() } }),
+    await (this.db as unknown as { $transaction: (ops: Promise<unknown>[]) => Promise<unknown> }).$transaction([
+      (this.db as unknown as UserDb).user.update({ where: { id: matched.userId }, data: { passwordHash: newHash } }),
+      (this.db as unknown as PasswordResetDb).passwordReset.update({ where: { id: matched.id }, data: { usedAt: new Date() } }),
     ]);
 
     await this.sessions.revokeAllSessions(matched.userId);
@@ -400,19 +397,19 @@ export class AuthService {
   async sendVerificationEmail(
     userId: string,
   ): Promise<{ message: string; developmentToken?: string }> {
-    const user = await this.db.user.findUnique({ where: { id: userId } });
+    const user = await (this.db as unknown as UserDb).user.findUnique({ where: { id: userId } }) as { emailVerified: boolean } | null;
     if (!user) throw new NotFoundException('User not found');
     if (user.emailVerified) return { message: 'Email is already verified.' };
 
     const rawToken = this.tokenService.generateOpaqueToken();
     const tokenHash = await this.tokenService.hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    await this.db.emailVerificationToken.create({
+    await (this.db as unknown as EmailVerificationDb).emailVerificationToken.create({
       data: { userId, tokenHash, expiresAt },
     });
 
-    const isDev = process.env.NODE_ENV !== 'production';
+    const isDev = process.env['NODE_ENV'] !== 'production';
     return {
       message: 'Verification email sent.',
       ...(isDev && { developmentToken: rawToken }),
@@ -423,23 +420,23 @@ export class AuthService {
     dto: VerifyEmailDto,
     meta: { ipAddress?: string; userAgent?: string; requestId?: string },
   ): Promise<{ success: boolean }> {
-    const tokens = await this.db.emailVerificationToken.findMany({
-      where: { usedAt: null, expiresAt: { gt: new Date() } },
-    });
+    interface EmailVerificationRow { id: string; userId: string; tokenHash: string }
 
-    let matched: typeof tokens[0] | null = null;
+    const tokens = await (this.db as unknown as EmailVerificationDb).emailVerificationToken.findMany({
+      where: { usedAt: null, expiresAt: { gt: new Date() } },
+    }) as EmailVerificationRow[];
+
+    let matched: EmailVerificationRow | null = null;
     for (const t of tokens) {
       const isMatch = await this.tokenService.verifyTokenHash(t.tokenHash, dto.token);
       if (isMatch) { matched = t; break; }
     }
 
-    if (!matched) {
-      throw new BadRequestException('Invalid or expired verification token');
-    }
+    if (!matched) throw new BadRequestException('Invalid or expired verification token');
 
-    await this.db.$transaction([
-      this.db.user.update({ where: { id: matched.userId }, data: { emailVerified: true, status: UserStatus.ACTIVE } }),
-      this.db.emailVerificationToken.update({ where: { id: matched.id }, data: { usedAt: new Date() } }),
+    await (this.db as unknown as { $transaction: (ops: Promise<unknown>[]) => Promise<unknown> }).$transaction([
+      (this.db as unknown as UserDb).user.update({ where: { id: matched.userId }, data: { emailVerified: true, status: 'ACTIVE' } }),
+      (this.db as unknown as EmailVerificationDb).emailVerificationToken.update({ where: { id: matched.id }, data: { usedAt: new Date() } }),
     ]);
 
     await this.audit({
@@ -459,14 +456,11 @@ export class AuthService {
   // ─────────────────────────────────────────────────────
 
   private async buildAuthResponse(
-    user: Awaited<ReturnType<typeof this.db.user.findUniqueOrThrow>> & {
-      roles: Array<{ role: { name: string; permissions: Array<{ permission: { name: string } }> } }>;
-    },
+    user: UserWithRoles,
     meta: { ipAddress?: string; userAgent?: string },
   ): Promise<AuthResponse> {
     const { token: accessToken, expiresIn } = await this.tokenService.generateAccessToken(user.id);
     const { rawToken: refreshToken } = await this.sessions.createSession(user.id, meta);
-
     const userDto = this.mapUserToDto(user);
 
     return {
@@ -476,19 +470,14 @@ export class AuthService {
     };
   }
 
-  private mapUserToDto(user: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    status: UserStatus;
-    emailVerified: boolean;
-    createdAt: Date;
-    roles: Array<{ role: { name: string; permissions: Array<{ permission: { name: string } }> } }>;
-  }): CurrentUserDto {
-    const roles = user.roles.map((ur) => ur.role.name);
+  private mapUserToDto(user: UserWithRoles): CurrentUserDto {
+    const roles = user.roles.map((ur: { role: RoleWithPermissions }) => ur.role.name);
     const permissions = [
-      ...new Set(user.roles.flatMap((ur) => ur.role.permissions.map((rp) => rp.permission.name))),
+      ...new Set(
+        user.roles.flatMap((ur: { role: RoleWithPermissions }) =>
+          ur.role.permissions.map((rp: { permission: { name: string } }) => rp.permission.name)
+        ),
+      ),
     ];
 
     return {
@@ -515,21 +504,51 @@ export class AuthService {
     requestId?: string;
   }): Promise<void> {
     try {
-      await this.db.auditLog.create({
+      await (this.db as unknown as AuditDb).auditLog.create({
         data: {
           action: params.action,
           entityType: params.entityType,
           entityId: params.entityId,
           userId: params.userId,
-          metadata: (params.metadata ?? {}) as unknown as Prisma.InputJsonValue,
+          metadata: params.metadata ?? {},
           ipAddress: params.ipAddress,
           userAgent: params.userAgent,
           requestId: params.requestId,
         },
       });
     } catch (err) {
-      // Never let audit failures break the main flow
       this.logger.error('Failed to write audit log', err);
     }
   }
 }
+
+// ─── Minimal DB delegate types (used for casting) ───────────────────────────
+// These are intentionally minimal — they type only what AuthService uses.
+// The real Prisma types will be used at runtime via DatabaseService extends PrismaClient.
+
+interface FindOptions { where?: Record<string, unknown>; include?: Record<string, unknown>; data?: Record<string, unknown> }
+interface Delegate {
+  findUnique: (opts: FindOptions) => Promise<unknown>;
+  findMany: (opts?: FindOptions) => Promise<unknown[]>;
+  create: (opts: FindOptions) => Promise<unknown>;
+  update: (opts: FindOptions) => Promise<unknown>;
+  updateMany: (opts: FindOptions) => Promise<{ count: number }>;
+}
+
+interface UserDb { user: Delegate }
+interface RoleDb { role: Delegate }
+interface PasswordResetDb { passwordReset: Delegate }
+interface EmailVerificationDb { emailVerificationToken: Delegate }
+interface AuditDb { auditLog: Delegate }
+
+const INCLUDE_ROLES = {
+  roles: {
+    include: {
+      role: {
+        include: {
+          permissions: { include: { permission: true } },
+        },
+      },
+    },
+  },
+} as const;
