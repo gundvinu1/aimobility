@@ -23,7 +23,8 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@prisma/client": "^5.17.0"
+    "@prisma/client": "^5.17.0",
+    "argon2": "^0.45.1"
   },
   "devDependencies": {
     "@ai-mos/config": "workspace:*",
