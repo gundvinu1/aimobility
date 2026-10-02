@@ -23,6 +23,39 @@ export interface RoleDto {
   id: UUID;
   name: string;
   description?: string | null;
+  scope?: 'PLATFORM' | 'COMPANY';
+  level?: number;
+  isSystem?: boolean;
+  companyId?: UUID | null;
+  permissionCount?: number;
+}
+
+/** Detailed role with full permissions list */
+export interface RoleDetailDto {
+  id: UUID;
+  name: string;
+  description?: string | null;
+  scope: 'PLATFORM' | 'COMPANY';
+  level: number;
+  isSystem: boolean;
+  companyId?: UUID | null;
+  permissionCount: number;
+  permissions: PermissionDto[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Summary role for lists */
+export interface RoleSummaryDto {
+  id: UUID;
+  name: string;
+  description?: string | null;
+  scope: 'PLATFORM' | 'COMPANY';
+  level: number;
+  isSystem: boolean;
+  companyId?: UUID | null;
+  permissionCount: number;
+  createdAt: string;
 }
 
 /** Permission shape */
@@ -30,12 +63,36 @@ export interface PermissionDto {
   id: UUID;
   name: string;
   description?: string | null;
+  module?: string | null;
+  action?: string | null;
+}
+
+/** Request to create a new custom role */
+export interface CreateRoleRequest {
+  name: string;
+  description?: string;
+  scope?: 'PLATFORM' | 'COMPANY';
+  level?: number;
+  permissionIds?: string[];
+}
+
+/** Request to update a role */
+export interface UpdateRoleRequest {
+  name?: string;
+  description?: string;
+}
+
+/** Request to update role permissions */
+export interface UpdateRolePermissionsRequest {
+  permissionIds: string[];
 }
 
 /** Current authenticated user (full profile) */
 export interface CurrentUserDto extends UserDto {
   roles: string[];
   permissions: string[];
+  activeCompany?: { id: UUID; name: string; role: string } | null;
+  companyRole?: string | null;
 }
 
 /** Auth response returned on login / refresh */

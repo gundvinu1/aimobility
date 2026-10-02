@@ -18,7 +18,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import type { AuthUser } from './types/auth-user.type';
 import type { CurrentUserDto, AuthTokens } from '@ai-mos/types';
-import { ROLES, AUTH_AUDIT_EVENTS } from '@ai-mos/constants';
+import { ROLES, AUTH_AUDIT_EVENTS, ROLE_PERMISSIONS } from '@ai-mos/constants';
 
 // ─── Local types (independent of generated Prisma types) ────────────────────
 // These avoid IDE errors when the Prisma generated client hasn't been
@@ -232,7 +232,7 @@ export class AuthService {
   // ME
   // ─────────────────────────────────────────────────────
 
-  async getMe(userId: string): Promise<CurrentUserDto> {
+  async getMe(userId: string, companyId?: string): Promise<CurrentUserDto> {
     const user = await (this.db as unknown as UserDb).user.findUnique({
       where: { id: userId },
       include: INCLUDE_ROLES,
@@ -242,7 +242,85 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    return this.mapUserToDto(user);
+    const baseDto = this.mapUserToDto(user);
+    const isSuperAdmin = user.roles.some((ur) => ur.role.name === 'SUPER_ADMIN');
+
+    if (isSuperAdmin) {
+      let company = null;
+      if (companyId) {
+        company = await (this.db as any).company.findUnique({ where: { id: companyId } });
+      }
+      return {
+        ...baseDto,
+        activeCompany: company ? { id: company.id, name: company.name, role: 'OWNER' } : null,
+        companyRole: 'OWNER',
+        permissions: ['*'],
+      };
+    }
+
+    if (!companyId) {
+      const topPlatformRole = user.roles[0]?.role.name || 'CUSTOMER';
+      const dbRole = await (this.db as any).role.findUnique({
+        where: { name: topPlatformRole },
+        include: { permissions: { include: { permission: true } } },
+      });
+      const dbPerms = dbRole?.permissions?.map((p: any) => p.permission.name) ?? [];
+      const rolePerms = dbPerms.length > 0 ? dbPerms : (ROLE_PERMISSIONS[topPlatformRole] || []);
+      return {
+        ...baseDto,
+        permissions: [...rolePerms],
+      };
+    }
+
+    // Lookup company membership
+    const membership = await (this.db as any).userCompany.findFirst({
+      where: { userId, companyId, status: 'ACTIVE' },
+      include: { company: true },
+    });
+
+    if (!membership) {
+      const topPlatformRole = user.roles[0]?.role.name || 'CUSTOMER';
+      const dbRole = await (this.db as any).role.findUnique({
+        where: { name: topPlatformRole },
+        include: { permissions: { include: { permission: true } } },
+      });
+      const dbPerms = dbRole?.permissions?.map((p: any) => p.permission.name) ?? [];
+      const rolePerms = dbPerms.length > 0 ? dbPerms : (ROLE_PERMISSIONS[topPlatformRole] || []);
+      return {
+        ...baseDto,
+        activeCompany: null,
+        companyRole: null,
+        permissions: [...rolePerms],
+      };
+    }
+
+    const companyRole = membership.role;
+    let effectiveRole = companyRole || 'MEMBER';
+    if (effectiveRole === 'MEMBER') {
+      const platformRoleNames = user.roles.map((ur) => ur.role.name);
+      if (platformRoleNames.includes('DISPATCHER')) effectiveRole = 'DISPATCHER';
+      else if (platformRoleNames.includes('ACCOUNTANT')) effectiveRole = 'ACCOUNTANT';
+      else if (platformRoleNames.includes('DRIVER')) effectiveRole = 'DRIVER';
+      else if (platformRoleNames.includes('CUSTOMER')) effectiveRole = 'CUSTOMER';
+      else if (platformRoleNames.includes('ADMIN')) effectiveRole = 'ADMIN';
+      else if (platformRoleNames.includes('MANAGER')) effectiveRole = 'MANAGER';
+    }
+
+    const dbRole = await (this.db as any).role.findUnique({
+      where: { name: effectiveRole },
+      include: { permissions: { include: { permission: true } } },
+    });
+    const dbPerms = dbRole?.permissions?.map((p: any) => p.permission.name) ?? [];
+    const rolePerms = dbPerms.length > 0 ? dbPerms : (ROLE_PERMISSIONS[effectiveRole] || []);
+
+    return {
+      ...baseDto,
+      activeCompany: membership.company
+        ? { id: membership.company.id, name: membership.company.name, role: companyRole }
+        : null,
+      companyRole,
+      permissions: [...rolePerms],
+    };
   }
 
   // ─────────────────────────────────────────────────────

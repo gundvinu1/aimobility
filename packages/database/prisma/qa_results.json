@@ -1,0 +1,262 @@
+[
+  {
+    "test": "Valid login returns access token",
+    "expected": "HTTP 200 with JWT",
+    "actual": "HTTP 200 with valid JWT",
+    "status": "PASS",
+    "evidence": "owner@aimos.dev"
+  },
+  {
+    "test": "Invalid credentials rejected",
+    "expected": "HTTP 401 Unauthorized",
+    "actual": "HTTP 401",
+    "status": "PASS"
+  },
+  {
+    "test": "Unauthenticated access to employees blocked",
+    "expected": "HTTP 401 Unauthorized",
+    "actual": "HTTP 401",
+    "status": "PASS"
+  },
+  {
+    "test": "Tenant setup: Company A and B isolated",
+    "expected": "Two distinct companies with segregated memberships",
+    "actual": "CompA: Company Alpha Fleet, CompB: Company Beta Logistics",
+    "status": "PASS"
+  },
+  {
+    "test": "Create Employee A in Company A",
+    "expected": "HTTP 201, stored in DB, companyId=Company A, audit log created",
+    "actual": "HTTP 201, empNumber=EMP-000001, auditLog=true",
+    "status": "PASS",
+    "evidence": "ID: b245aca9-e885-4c87-8589-98cb12098227, Number: EMP-000001"
+  },
+  {
+    "test": "Duplicate employeeNumber in same company rejected by database constraint",
+    "expected": "Rejection via unique constraint P2002",
+    "actual": "P2002 Unique constraint failed",
+    "status": "PASS"
+  },
+  {
+    "test": "Same employeeNumber allowed in different company (Company B)",
+    "expected": "Allowed (Unique per company)",
+    "actual": "Created successfully in Company B",
+    "status": "PASS"
+  },
+  {
+    "test": "List employees returns active company records with pagination",
+    "expected": "HTTP 200, array of items, page/limit/total present, only Company A",
+    "actual": "HTTP 200, count=1, total=1, onlyCompA=true",
+    "status": "PASS"
+  },
+  {
+    "test": "Search by first name (\"Rahul\")",
+    "expected": "Returns Employee A",
+    "actual": "Matches: 1",
+    "status": "PASS"
+  },
+  {
+    "test": "Search by designation (\"Operations\")",
+    "expected": "Returns Employee A",
+    "actual": "Matches: 1",
+    "status": "PASS"
+  },
+  {
+    "test": "Search isolation: Company A user cannot find Company B employee (\"Bhavna\")",
+    "expected": "0 results",
+    "actual": "Matches: 0",
+    "status": "PASS"
+  },
+  {
+    "test": "Filter by department=OPERATIONS",
+    "expected": "Returns matching employee",
+    "actual": "Matches: 1",
+    "status": "PASS"
+  },
+  {
+    "test": "Filter by employmentStatus=ACTIVE",
+    "expected": "Returns matching employee",
+    "actual": "Matches: 1",
+    "status": "PASS"
+  },
+  {
+    "test": "Pagination: page=1 and page=2 return non-overlapping sets",
+    "expected": "No duplicates between page 1 and page 2, totalPages calculated",
+    "actual": "P1 count: 2, P2 count: 2, total: 4, totalPages: 2",
+    "status": "PASS"
+  },
+  {
+    "test": "Get employee details by ID",
+    "expected": "HTTP 200, matching employee",
+    "actual": "HTTP 200, Name: Rahul Patil",
+    "status": "PASS"
+  },
+  {
+    "test": "Invalid UUID returns 400",
+    "expected": "HTTP 400 Bad Request",
+    "actual": "HTTP 400",
+    "status": "PASS"
+  },
+  {
+    "test": "Update employee details via PATCH",
+    "expected": "HTTP 200, updated fields reflected in DB, audit log created",
+    "actual": "HTTP 200, designation=Senior Operations Director, auditLog=true",
+    "status": "PASS"
+  },
+  {
+    "test": "Status transition: ACTIVE -> ON_LEAVE",
+    "expected": "HTTP 200, status=ON_LEAVE, audit log created",
+    "actual": "HTTP 200, status=ON_LEAVE, auditLog=true",
+    "status": "PASS"
+  },
+  {
+    "test": "Invalid status transition rejected",
+    "expected": "HTTP 400 Bad Request",
+    "actual": "HTTP 400",
+    "status": "PASS"
+  },
+  {
+    "test": "DELETE /api/employees/:id succeeds",
+    "expected": "HTTP 204 No Content",
+    "actual": "HTTP 204",
+    "status": "PASS"
+  },
+  {
+    "test": "Database soft delete retains record with deletedAt timestamp",
+    "expected": "deletedAt != null, record exists",
+    "actual": "deletedAt=2026-10-01T08:48:28.700Z",
+    "status": "PASS"
+  },
+  {
+    "test": "Deleted employee excluded from list API",
+    "expected": "Employee not in results",
+    "actual": "Found: false",
+    "status": "PASS"
+  },
+  {
+    "test": "Tenant Isolation: User A GET Employee A (same company)",
+    "expected": "HTTP 200 OK",
+    "actual": "HTTP 200",
+    "status": "PASS"
+  },
+  {
+    "test": "Tenant Isolation: User A GET Employee B with Company A header",
+    "expected": "HTTP 404 Not Found",
+    "actual": "HTTP 404",
+    "status": "PASS"
+  },
+  {
+    "test": "Tenant Isolation: User A GET Employee B with Company B header",
+    "expected": "HTTP 403 Forbidden",
+    "actual": "HTTP 403",
+    "status": "PASS"
+  },
+  {
+    "test": "Tenant Isolation: User A PATCH Employee B with Company A header",
+    "expected": "HTTP 404 Not Found",
+    "actual": "HTTP 404",
+    "status": "PASS"
+  },
+  {
+    "test": "Tenant Isolation: User A PATCH Employee B with Company B header",
+    "expected": "HTTP 403 Forbidden",
+    "actual": "HTTP 403",
+    "status": "PASS"
+  },
+  {
+    "test": "Tenant Isolation: User A DELETE Employee B with Company A header",
+    "expected": "HTTP 404 Not Found",
+    "actual": "HTTP 404",
+    "status": "PASS"
+  },
+  {
+    "test": "Tenant Isolation: User A DELETE Employee B with Company B header",
+    "expected": "HTTP 403 Forbidden",
+    "actual": "HTTP 403",
+    "status": "PASS"
+  },
+  {
+    "test": "Tenant Isolation (Reverse): User B GET Employee A with Company B header",
+    "expected": "HTTP 404 Not Found",
+    "actual": "HTTP 404",
+    "status": "PASS"
+  },
+  {
+    "test": "Tenant Isolation (Reverse): User B GET Employee A with Company A header",
+    "expected": "HTTP 403 Forbidden",
+    "actual": "HTTP 403",
+    "status": "PASS"
+  },
+  {
+    "test": "Missing X-Company-ID header rejected",
+    "expected": "HTTP 400 Bad Request",
+    "actual": "HTTP 400",
+    "status": "PASS"
+  },
+  {
+    "test": "Invalid X-Company-ID format rejected",
+    "expected": "HTTP 400 Bad Request",
+    "actual": "HTTP 400",
+    "status": "PASS"
+  },
+  {
+    "test": "Non-existent X-Company-ID rejected",
+    "expected": "HTTP 404 Not Found",
+    "actual": "HTTP 404",
+    "status": "PASS"
+  },
+  {
+    "test": "RBAC: MANAGER can CREATE employee",
+    "expected": "HTTP 201 Created",
+    "actual": "HTTP 201",
+    "status": "PASS"
+  },
+  {
+    "test": "RBAC: MANAGER cannot DELETE employee (OWNER/ADMIN only)",
+    "expected": "HTTP 403 Forbidden",
+    "actual": "HTTP 403",
+    "status": "PASS"
+  },
+  {
+    "test": "RBAC: DISPATCHER (MEMBER) can READ employees",
+    "expected": "HTTP 200 OK",
+    "actual": "HTTP 200",
+    "status": "PASS"
+  },
+  {
+    "test": "RBAC: ACCOUNTANT (MEMBER) can READ employees",
+    "expected": "HTTP 200 OK",
+    "actual": "HTTP 200",
+    "status": "PASS"
+  },
+  {
+    "test": "RBAC: DISPATCHER cannot CREATE employee",
+    "expected": "HTTP 403 Forbidden",
+    "actual": "HTTP 403",
+    "status": "PASS"
+  },
+  {
+    "test": "RBAC: DRIVER (Non-member) blocked from employees",
+    "expected": "HTTP 403 Forbidden",
+    "actual": "HTTP 403",
+    "status": "PASS"
+  },
+  {
+    "test": "RBAC: CUSTOMER (Non-member) blocked from employees",
+    "expected": "HTTP 403 Forbidden",
+    "actual": "HTTP 403",
+    "status": "PASS"
+  },
+  {
+    "test": "Audit Log captures required entity fields and timestamps",
+    "expected": "entityId, action, timestamp populated",
+    "actual": "Audits checked: 10",
+    "status": "PASS"
+  },
+  {
+    "test": "Audit Log does NOT expose passwords or tokens",
+    "expected": "No password/token in metadata",
+    "actual": "Sanitized: true",
+    "status": "PASS"
+  }
+]

@@ -2,7 +2,7 @@
   "name": "ai-mos",
   "version": "0.1.0",
   "private": true,
-  "description": "AI Mobility Operating System - Enterprise SaaS Platform for Mobility Businesses",
+  "packageManager": "pnpm@9.15.9",
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
@@ -25,6 +25,7 @@
     "@commitlint/config-conventional": "^19.4.0",
     "husky": "^9.1.4",
     "lint-staged": "^15.2.7",
+    "playwright": "^1.63.0",
     "prettier": "^3.3.3",
     "prettier-plugin-tailwindcss": "^0.6.5",
     "rimraf": "^6.0.1",

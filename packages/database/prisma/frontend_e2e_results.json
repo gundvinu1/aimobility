@@ -1,0 +1,57 @@
+[
+  {
+    "step": "Load Login Page",
+    "expected": "Login form visible",
+    "actual": "Page loaded with HTTP 200",
+    "passed": true,
+    "screenshot": "C:\\Users\\Vinayak\\.gemini\\antigravity-ide\\brain\\88ffaef0-792c-4c61-9a65-8adb8314159b\\scratch\\screenshots\\01_login_page.png"
+  },
+  {
+    "step": "Authenticate & Redirect",
+    "expected": "Redirect away from /login",
+    "actual": "Redirected to http://localhost:3000/dashboard",
+    "passed": true,
+    "screenshot": "C:\\Users\\Vinayak\\.gemini\\antigravity-ide\\brain\\88ffaef0-792c-4c61-9a65-8adb8314159b\\scratch\\screenshots\\02_post_login.png"
+  },
+  {
+    "step": "Company A Employees List & Stats",
+    "expected": "Rahul Patil visible, stats rendered",
+    "actual": "Rahul present: true, Stats present: true",
+    "passed": true,
+    "screenshot": "C:\\Users\\Vinayak\\.gemini\\antigravity-ide\\brain\\88ffaef0-792c-4c61-9a65-8adb8314159b\\scratch\\screenshots\\03_company_a_employees.png"
+  },
+  {
+    "step": "Create Employee & View Details via UI",
+    "expected": "Navigates to Employee Details page with Aarav Sharma",
+    "actual": "Aarav found: true",
+    "passed": true,
+    "screenshot": "C:\\Users\\Vinayak\\.gemini\\antigravity-ide\\brain\\88ffaef0-792c-4c61-9a65-8adb8314159b\\scratch\\screenshots\\05_employee_details.png"
+  },
+  {
+    "step": "Employee in List Table",
+    "expected": "Aarav Sharma listed in employee table",
+    "actual": "Aarav Sharma found: true",
+    "passed": true,
+    "screenshot": "C:\\Users\\Vinayak\\.gemini\\antigravity-ide\\brain\\88ffaef0-792c-4c61-9a65-8adb8314159b\\scratch\\screenshots\\06_employee_in_list.png"
+  },
+  {
+    "step": "UI Search Filter",
+    "expected": "Only Aarav Sharma displayed, others filtered out",
+    "actual": "Search filtered: true",
+    "passed": true,
+    "screenshot": "C:\\Users\\Vinayak\\.gemini\\antigravity-ide\\brain\\88ffaef0-792c-4c61-9a65-8adb8314159b\\scratch\\screenshots\\07_search_aarav.png"
+  },
+  {
+    "step": "Company Switching & Frontend Tenant Isolation",
+    "expected": "Company B shows Bhavna Verma; Company A employees (Aarav, Rahul) completely absent",
+    "actual": "Bhavna: true, No Aarav: true, No Rahul: true",
+    "passed": true,
+    "screenshot": "C:\\Users\\Vinayak\\.gemini\\antigravity-ide\\brain\\88ffaef0-792c-4c61-9a65-8adb8314159b\\scratch\\screenshots\\08_company_b_employees.png"
+  },
+  {
+    "step": "Browser Console Audit",
+    "expected": "No fatal JavaScript or unhandled React errors",
+    "actual": "Errors caught: 0",
+    "passed": true
+  }
+]

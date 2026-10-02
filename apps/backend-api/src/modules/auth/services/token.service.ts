@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import * as argon2 from 'argon2';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import type { AccessTokenPayload } from '../types/auth-user.type';
 
 @Injectable()
@@ -31,15 +30,16 @@ export class TokenService {
     return randomBytes(64).toString('base64url');
   }
 
-  /** Hash a raw refresh token for storage (Argon2id) */
+  /** Hash a raw refresh token for storage */
   async hashToken(raw: string): Promise<string> {
-    return argon2.hash(raw, { type: argon2.argon2id });
+    return createHash('sha256').update(raw).digest('hex');
   }
 
   /** Verify a raw token against stored hash */
   async verifyTokenHash(hash: string, raw: string): Promise<boolean> {
     try {
-      return await argon2.verify(hash, raw);
+      const computed = createHash('sha256').update(raw).digest('hex');
+      return timingSafeEqual(Buffer.from(hash), Buffer.from(computed));
     } catch {
       return false;
     }

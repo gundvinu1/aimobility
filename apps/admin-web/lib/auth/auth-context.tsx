@@ -1,13 +1,19 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import type { CurrentUserDto } from '@ai-mos/types';
+import {
+  hasPermissionHelper,
+  hasAnyPermissionHelper,
+  hasAllPermissionsHelper,
+  hasRoleHelper,
+  ROLE_PERMISSIONS,
+} from './permissions';
 
 // ─── Storage keys ───────────────────────────────────────────────────────────
 // Access token in memory only (never persisted) — most secure approach
 // Refresh token in sessionStorage (tab-scoped, cleared on close)
 // ADR-005 documents this decision.
-const ACCESS_TOKEN_KEY = 'amos_at';
 const REFRESH_TOKEN_KEY = 'amos_rt';
 
 // ─── API helper ─────────────────────────────────────────────────────────────
@@ -55,8 +61,13 @@ export interface AuthState {
 }
 
 export interface AuthContextValue extends AuthState {
-  login: (email: string, password: string) => Promise<void>;
-  register: (data: { email: string; password: string; firstName: string; lastName: string }) => Promise<void>;
+  permissions: string[];
+  hasPermission: (_permission: string) => boolean;
+  hasAnyPermission: (_permissions: string[]) => boolean;
+  hasAllPermissions: (_permissions: string[]) => boolean;
+  hasRole: (_role: string) => boolean;
+  login: (_email: string, _password: string) => Promise<void>;
+  register: (_data: { email: string; password: string; firstName: string; lastName: string }) => Promise<void>;
   logout: () => Promise<void>;
   refreshTokens: () => Promise<boolean>;
 }
@@ -159,8 +170,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const permissions = useMemo(() => {
+    if (!state.user) return [];
+    if (state.user.roles?.includes('SUPER_ADMIN')) return ['*'];
+    const roleKey = state.user.roles?.[0] ?? 'CUSTOMER';
+    const rolePerms = ROLE_PERMISSIONS[roleKey] ?? [];
+    return Array.from(new Set([...rolePerms, ...(state.user.permissions ?? [])]));
+  }, [state.user]);
+
+  const hasPermission = useCallback(
+    (perm: string) => hasPermissionHelper(permissions, perm),
+    [permissions],
+  );
+
+  const hasAnyPermission = useCallback(
+    (perms: string[]) => hasAnyPermissionHelper(permissions, perms),
+    [permissions],
+  );
+
+  const hasAllPermissions = useCallback(
+    (perms: string[]) => hasAllPermissionsHelper(permissions, perms),
+    [permissions],
+  );
+
+  const hasRole = useCallback(
+    (role: string) => hasRoleHelper(state.user?.roles ?? [], role),
+    [state.user],
+  );
+
   return (
-    <AuthContext.Provider value={{ ...state, login, register, logout, refreshTokens }}>
+    <AuthContext.Provider
+      value={{
+        ...state,
+        permissions,
+        hasPermission,
+        hasAnyPermission,
+        hasAllPermissions,
+        hasRole,
+        login,
+        register,
+        logout,
+        refreshTokens,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

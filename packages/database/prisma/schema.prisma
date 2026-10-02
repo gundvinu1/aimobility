@@ -81,6 +81,9 @@ model User {
   refreshSessions RefreshSession[]
   passwordResets  PasswordReset[]
   emailTokens     EmailVerificationToken[]
+  companies       UserCompany[]
+  employees       Employee[]
+  customerBookings Booking[]
 
   @@index([email])
   @@index([status])
@@ -88,18 +91,25 @@ model User {
   @@map("users")
 }
 
-/// Platform role
+/// Platform and Company role
 model Role {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name        String   @unique
   description String?
+  scope       String   @default("COMPANY")
+  level       Int      @default(10)
+  isSystem    Boolean  @default(false)
+  companyId   String?  @db.Uuid
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relations
   users       UserRole[]
   permissions RolePermission[]
+  company     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([scope])
+  @@index([companyId])
   @@map("roles")
 }
 
@@ -108,12 +118,15 @@ model Permission {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name        String   @unique
   description String?
+  module      String?
+  action      String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relations
   roles RolePermission[]
 
+  @@index([module])
   @@map("permissions")
 }
 
@@ -194,3 +207,766 @@ model EmailVerificationToken {
   @@index([tokenHash])
   @@map("email_verification_tokens")
 }
+
+// =============================================================================
+// MODULE 3 — COMPANY + MULTI-TENANT MANAGEMENT
+// =============================================================================
+
+/// Company (tenant) status
+enum CompanyStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+/// Company membership role (separate from platform RBAC roles)
+enum CompanyRole {
+  OWNER
+  ADMIN
+  MANAGER
+  MEMBER
+}
+
+/// Company membership status
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  REMOVED
+}
+
+/// A company / tenant on the AI-MOS platform
+model Company {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String
+  legalName   String?
+  slug        String        @unique
+  email       String?
+  phone       String?
+  website     String?
+  logoUrl     String?
+  address     String?
+  city        String?
+  state       String?
+  country     String?
+  postalCode  String?
+  timezone    String        @default("UTC")
+  currency    String        @default("USD")
+  status      CompanyStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  settings    CompanySettings?
+  members     UserCompany[]
+  invitations CompanyInvitation[]
+  employees   Employee[]
+  vehicles    Vehicle[]
+  drivers     Driver[]
+  bookings    Booking[]
+  trips       Trip[]
+  roles       Role[]
+
+  @@index([slug])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("companies")
+}
+
+/// Company settings (1-to-1 with Company)
+model CompanySettings {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId   String   @unique @db.Uuid
+  timezone    String   @default("UTC")
+  currency    String   @default("USD")
+  dateFormat  String   @default("DD/MM/YYYY")
+  timeFormat  String   @default("HH:mm")
+  language    String   @default("en")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("company_settings")
+}
+
+/// User ↔ Company membership
+model UserCompany {
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String           @db.Uuid
+  companyId String           @db.Uuid
+  role      CompanyRole      @default(MEMBER)
+  status    MembershipStatus @default(ACTIVE)
+  joinedAt  DateTime         @default(now())
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([userId])
+  @@index([companyId])
+  @@index([status])
+  @@map("user_companies")
+}
+
+/// Company invitation (token stored hashed, never in plaintext)
+model CompanyInvitation {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId   String           @db.Uuid
+  email       String
+  role        CompanyRole      @default(MEMBER)
+  tokenHash   String           @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  invitedById String           @db.Uuid
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([email])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@map("company_invitations")
+}
+
+// =============================================================================
+// MODULE 4 — EMPLOYEE MANAGEMENT
+// =============================================================================
+
+/// Employment status
+enum EmploymentStatus {
+  ACTIVE
+  INACTIVE
+  ON_LEAVE
+  SUSPENDED
+  TERMINATED
+}
+
+/// Employment type
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  TEMPORARY
+  INTERN
+}
+
+/// Employee gender
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+/// Department (extensible enum — future Department CRUD module can replace this)
+enum Department {
+  OPERATIONS
+  DISPATCH
+  ACCOUNTS
+  HR
+  SALES
+  CUSTOMER_SUPPORT
+  ADMINISTRATION
+  MANAGEMENT
+  OTHER
+}
+
+/// Employee — person working inside a company (distinct from User / platform identity)
+model Employee {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId     String           @db.Uuid
+  /// Optional link to a User account (an employee can exist without a login)
+  userId        String?          @db.Uuid
+
+  employeeNumber String
+
+  // ─── Personal info ─────────────────────────────────────────────────────────
+  firstName     String
+  middleName    String?
+  lastName      String
+  displayName   String?
+  gender        Gender?
+  dateOfBirth   DateTime?
+
+  // ─── Contact ───────────────────────────────────────────────────────────────
+  email         String?
+  phone         String
+  alternatePhone String?
+  profileImageUrl String?
+
+  // ─── Address ───────────────────────────────────────────────────────────────
+  address       String?
+  city          String?
+  state         String?
+  country       String?
+  postalCode    String?
+
+  // ─── Employment ────────────────────────────────────────────────────────────
+  department        Department?
+  designation       String?
+  joiningDate       DateTime
+  employmentType    EmploymentType    @default(FULL_TIME)
+  employmentStatus  EmploymentStatus  @default(ACTIVE)
+
+  // ─── Emergency contact ─────────────────────────────────────────────────────
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+
+  notes     String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // ─── Relations ─────────────────────────────────────────────────────────────
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  driver  Driver?
+
+  // Employee numbers are unique within a company (not globally)
+  @@unique([companyId, employeeNumber])
+
+  @@index([companyId])
+  @@index([companyId, employmentStatus])
+  @@index([companyId, department])
+  @@index([companyId, createdAt])
+  @@index([companyId, joiningDate])
+  @@index([userId])
+  @@index([deletedAt])
+
+  @@map("employees")
+}
+
+// =============================================================================
+// MODULE 5 — VEHICLE MANAGEMENT
+// =============================================================================
+
+/// Vehicle operational status
+enum VehicleStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+  RETIRED
+  ON_TRIP
+}
+
+/// Vehicle fuel/propulsion type
+enum FuelType {
+  PETROL
+  DIESEL
+  ELECTRIC
+  HYBRID
+  CNG
+  LPG
+  OTHER
+}
+
+/// Vehicle ownership type
+enum VehicleOwnership {
+  OWNED
+  LEASED
+  RENTED
+}
+
+/// Vehicle document type
+enum VehicleDocumentType {
+  REGISTRATION_CERTIFICATE
+  INSURANCE
+  POLLUTION_CERTIFICATE
+  FITNESS_CERTIFICATE
+  PERMIT
+  TAX_TOKEN
+  OTHER
+}
+
+/// Vehicle maintenance type
+enum MaintenanceType {
+  PREVENTIVE
+  CORRECTIVE
+  EMERGENCY
+  INSPECTION
+  OTHER
+}
+
+/// Vehicle maintenance status
+enum MaintenanceStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+/// Vehicle (tenant-scoped to a company)
+model Vehicle {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId   String          @db.Uuid
+
+  // ─── Identity ─────────────────────────────────────────────────────────────
+  vehicleNumber  String           // e.g. "MH12AB1234" — unique within company
+  make           String           // e.g. "Toyota"
+  model          String           // e.g. "Innova Crysta"
+  year           Int              // manufacturing year
+  color          String?
+  vin            String?          // Vehicle Identification Number (optional global unique)
+
+  // ─── Classification ───────────────────────────────────────────────────────
+  fuelType       FuelType         @default(DIESEL)
+  ownership      VehicleOwnership @default(OWNED)
+  status         VehicleStatus    @default(ACTIVE)
+  capacity       Int?             // seating / load capacity
+  odometer       Int              @default(0)  // km
+  imageUrl       String?
+
+  // ─── Registration ─────────────────────────────────────────────────────────
+  registrationExpiry  DateTime?
+  insuranceExpiry     DateTime?
+
+  notes          String?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  // ─── Relations ────────────────────────────────────────────────────────────
+  company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documents     VehicleDocument[]
+  maintenances  VehicleMaintenance[]
+  driverAssignments DriverVehicleAssignment[]
+  trips         Trip[]
+
+  // Vehicle number is unique within a company
+  @@unique([companyId, vehicleNumber])
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, fuelType])
+  @@index([companyId, createdAt])
+  @@index([deletedAt])
+
+  @@map("vehicles")
+}
+
+/// Vehicle document (insurance, registration, permit, etc.)
+model VehicleDocument {
+  id          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId   String              @db.Uuid
+  companyId   String              @db.Uuid   // denormalized for fast tenant scoping
+
+  documentType  VehicleDocumentType
+  name          String             // Human-readable document name
+  documentNumber String?           // RC number, insurance policy number, etc.
+  issuedAt      DateTime?
+  expiresAt     DateTime?
+  fileUrl       String?
+  notes         String?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId])
+  @@index([companyId])
+  @@index([expiresAt])
+
+  @@map("vehicle_documents")
+}
+
+/// Vehicle maintenance record
+model VehicleMaintenance {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId   String            @db.Uuid
+  companyId   String            @db.Uuid   // denormalized for fast tenant scoping
+
+  maintenanceType  MaintenanceType   @default(PREVENTIVE)
+  status           MaintenanceStatus @default(SCHEDULED)
+  description      String
+  scheduledAt      DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  odometerAtService Int?             // km reading at time of service
+  cost             Decimal?          @db.Decimal(12, 2)
+  vendor           String?           // garage / workshop name
+  notes            String?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId])
+  @@index([companyId])
+  @@index([status])
+  @@index([scheduledAt])
+
+  @@map("vehicle_maintenances")
+}
+
+// =============================================================================
+// MODULE 6 — DRIVER MANAGEMENT
+// =============================================================================
+
+/// Driver operational status
+enum DriverStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  TERMINATED
+}
+
+/// Driver duty status for shift/dispatch operations
+enum DriverDutyStatus {
+  OFF_DUTY
+  ON_DUTY
+  ON_TRIP
+  ON_BREAK
+  UNAVAILABLE
+}
+
+/// Commercial driving licence classification
+enum LicenseType {
+  LMV
+  HMV
+  COMMERCIAL
+  TRANSPORT
+  OTHER
+}
+
+/// Driver document types
+enum DriverDocumentType {
+  DRIVING_LICENSE
+  BADGE
+  POLICE_VERIFICATION
+  MEDICAL_CERTIFICATE
+  IDENTITY_PROOF
+  ADDRESS_PROOF
+  OTHER
+}
+
+/// Driver (tenant-scoped to a company, optionally linked to an Employee)
+model Driver {
+  id                      String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId               String           @db.Uuid
+  employeeId              String?          @unique @db.Uuid
+
+  driverCode              String           // Unique within company, e.g. "DRV-001"
+  licenseNumber           String           // Driver license number
+  licenseType             LicenseType      @default(COMMERCIAL)
+  licenseIssueDate        DateTime?
+  licenseExpiryDate       DateTime
+  licenseIssuingAuthority String?
+  badgeNumber             String?
+  badgeExpiryDate         DateTime?
+  experienceYears         Int              @default(0)
+  bloodGroup              String?
+  emergencyContactName    String?
+  emergencyContactPhone   String?
+  status                  DriverStatus     @default(ACTIVE)
+  dutyStatus              DriverDutyStatus @default(OFF_DUTY)
+  joiningDate             DateTime         @default(now())
+  notes                   String?
+
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+  deletedAt               DateTime?
+
+  // Relations
+  company                 Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee                Employee?        @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  documents               DriverDocument[]
+  dutyLogs                DriverDutyLog[]
+  vehicleAssignments      DriverVehicleAssignment[]
+  trips                   Trip[]
+
+  @@unique([companyId, driverCode])
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, dutyStatus])
+  @@index([licenseExpiryDate])
+  @@index([employeeId])
+  @@index([deletedAt])
+
+  @@map("drivers")
+}
+
+/// Driver document (license copy, badge, medical certificate, etc.)
+model DriverDocument {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId       String             @db.Uuid
+  companyId      String             @db.Uuid
+
+  documentType   DriverDocumentType
+  documentNumber String?
+  issueDate      DateTime?
+  expiryDate     DateTime?
+  fileUrl        String?
+  notes          String?
+
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  deletedAt      DateTime?
+
+  driver         Driver             @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId])
+  @@index([companyId])
+  @@index([expiryDate])
+  @@index([deletedAt])
+
+  @@map("driver_documents")
+}
+
+/// Driver shift/duty status history
+model DriverDutyLog {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId   String           @db.Uuid
+  companyId  String           @db.Uuid
+  status     DriverDutyStatus
+  startedAt  DateTime         @default(now())
+  endedAt    DateTime?
+  notes      String?
+  createdAt  DateTime         @default(now())
+
+  driver     Driver           @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId])
+  @@index([companyId])
+  @@index([startedAt])
+
+  @@map("driver_duty_logs")
+}
+
+/// Driver-to-Vehicle assignment record with tenant scoping
+model DriverVehicleAssignment {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId    String    @db.Uuid
+  driverId     String    @db.Uuid
+  vehicleId    String    @db.Uuid
+  assignedAt   DateTime  @default(now())
+  unassignedAt DateTime?
+  isActive     Boolean   @default(true)
+  notes        String?
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  driver       Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicle      Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([driverId])
+  @@index([vehicleId])
+  @@index([isActive])
+
+  @@map("driver_vehicle_assignments")
+}
+
+// =============================================================================
+// MODULE 7 — TRIP & BOOKING MANAGEMENT
+// =============================================================================
+
+/// Booking reservation status
+enum BookingStatus {
+  DRAFT
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+  COMPLETED
+}
+
+/// Channel/source from which booking originated
+enum BookingSource {
+  MANUAL
+  ONLINE
+  CORPORATE
+  PHONE
+  APP
+  OTHER
+}
+
+/// Operational journey type
+enum TripType {
+  ONE_WAY
+  ROUND_TRIP
+  RENTAL
+  AIRPORT_TRANSFER
+  OUTSTATION
+}
+
+/// Controlled trip execution status
+enum TripStatus {
+  SCHEDULED
+  DRIVER_ASSIGNED
+  VEHICLE_ASSIGNED
+  DISPATCHED
+  DRIVER_ARRIVED
+  PASSENGER_ONBOARD
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+/// Booking / Reservation (tenant-scoped)
+model Booking {
+  id                      String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId               String        @db.Uuid
+  customerId              String?       @db.Uuid
+
+  bookingNumber           String        // Unique within company, e.g. "BKG-0001"
+  source                  BookingSource @default(MANUAL)
+  tripType                TripType      @default(ONE_WAY)
+
+  // Customer contact details (supports registered users & guest/phone bookings)
+  customerName            String
+  customerPhone           String
+  customerEmail           String?
+
+  // Locations
+  pickupLocation          String
+  pickupAddress           String?
+  pickupLatitude          Float?
+  pickupLongitude         Float?
+  dropLocation            String
+  dropAddress             String?
+  dropLatitude            Float?
+  dropLongitude           Float?
+
+  // Schedule & Estimates
+  scheduledPickupAt       DateTime
+  estimatedDurationMinutes Int?
+  estimatedDistanceKm     Float?
+
+  // Capacity & Requirements
+  passengerCount          Int           @default(1)
+  luggageCount            Int           @default(0)
+  vehicleCategory         String?       // e.g. "SEDAN", "SUV", "VAN", "LUXURY"
+  specialRequirements     String?
+
+  // Status & Cancellation
+  status                  BookingStatus @default(PENDING)
+  cancellationReason      String?
+  cancelledAt             DateTime?
+
+  // Pricing estimate
+  estimatedFare           Decimal?      @db.Decimal(12, 2)
+
+  notes                   String?
+  createdBy               String?       @db.Uuid
+
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+  deletedAt               DateTime?
+
+  // Relations
+  company                 Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer                User?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  trips                   Trip[]
+
+  @@unique([companyId, bookingNumber])
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([scheduledPickupAt])
+  @@index([customerId])
+  @@index([deletedAt])
+
+  @@map("bookings")
+}
+
+/// Operational Trip (connected to Booking, Driver, and Vehicle)
+model Trip {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId           String             @db.Uuid
+  bookingId           String             @db.Uuid
+  driverId            String?            @db.Uuid
+  vehicleId           String?            @db.Uuid
+
+  tripNumber          String             // Unique within company, e.g. "TRP-0001"
+
+  // Route & Addresses
+  pickupLocation      String
+  pickupAddress       String?
+  pickupLatitude      Float?
+  pickupLongitude     Float?
+  dropLocation        String
+  dropAddress         String?
+  dropLatitude        Float?
+  dropLongitude       Float?
+
+  // Execution Timings
+  scheduledStart      DateTime
+  actualStart         DateTime?
+  actualEnd           DateTime?
+
+  // Metrics
+  distanceKm          Float?
+  durationMinutes     Int?
+  passengerCount      Int                @default(1)
+
+  // Status & Lifecycle
+  status              TripStatus         @default(SCHEDULED)
+  cancellationReason  String?
+  cancelledBy         String?            @db.Uuid
+  cancelledAt         DateTime?
+
+  notes               String?
+
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  deletedAt           DateTime?
+
+  // Relations
+  company             Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  booking             Booking            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  driver              Driver?            @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  vehicle             Vehicle?           @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  statusHistory       TripStatusHistory[]
+
+  @@unique([companyId, tripNumber])
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([bookingId])
+  @@index([driverId])
+  @@index([vehicleId])
+  @@index([scheduledStart])
+  @@index([deletedAt])
+
+  @@map("trips")
+}
+
+/// Immutable record of trip lifecycle state transitions
+model TripStatusHistory {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tripId     String     @db.Uuid
+  companyId  String     @db.Uuid
+  fromStatus TripStatus?
+  toStatus   TripStatus
+  changedBy  String?    @db.Uuid
+  notes      String?
+  latitude   Float?
+  longitude  Float?
+  createdAt  DateTime   @default(now())
+
+  trip       Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId])
+  @@index([companyId])
+  @@index([createdAt])
+
+  @@map("trip_status_histories")
+}
+
+
+

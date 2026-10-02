@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Req,
+  Headers,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -111,11 +112,11 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get current authenticated user profile' })
+  @ApiOperation({ summary: 'Get current authenticated user profile and permissions' })
   @ApiResponse({ status: 200, description: 'Current user profile' })
   @ApiResponse({ status: 401, description: 'Not authenticated' })
-  async getMe(@CurrentUser() user: AuthUser) {
-    return this.authService.getMe(user.userId);
+  async getMe(@CurrentUser() user: AuthUser, @Headers('x-company-id') companyId?: string) {
+    return this.authService.getMe(user.userId, companyId);
   }
 
   // ─── Change Password ─────────────────────────────────

@@ -11,7 +11,7 @@ describe('PasswordService', () => {
     it('should hash a password and return a different string', async () => {
       const hash = await service.hash('MyStr0ng!Pass');
       expect(hash).not.toBe('MyStr0ng!Pass');
-      expect(hash.startsWith('$argon2id')).toBe(true);
+      expect(hash.startsWith('$scrypt$')).toBe(true);
     });
 
     it('should produce different hashes for the same password', async () => {

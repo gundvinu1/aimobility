@@ -30,15 +30,19 @@ export const PERMISSIONS = {
   // Role management
   ROLE_READ: 'role.read',
   ROLE_WRITE: 'role.write',
+  ROLE_CREATE: 'role.create',
+  ROLE_UPDATE: 'role.update',
+  ROLE_DELETE: 'role.delete',
 
   // Permission management
   PERMISSION_READ: 'permission.read',
   PERMISSION_WRITE: 'permission.write',
+  PERMISSION_ASSIGN: 'permission.assign',
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
-/** Audit event types for auth actions */
+/** Audit event types for auth and RBAC actions */
 export const AUTH_AUDIT_EVENTS = {
   REGISTER: 'AUTH_REGISTER',
   LOGIN_SUCCESS: 'AUTH_LOGIN_SUCCESS',
@@ -51,6 +55,12 @@ export const AUTH_AUDIT_EVENTS = {
   EMAIL_VERIFIED: 'AUTH_EMAIL_VERIFIED',
   REFRESH: 'AUTH_REFRESH',
   SESSION_REVOKED: 'AUTH_SESSION_REVOKED',
+
+  // RBAC Audit Events
+  ROLE_CREATED: 'ROLE_CREATED',
+  ROLE_UPDATED: 'ROLE_UPDATED',
+  ROLE_DELETED: 'ROLE_DELETED',
+  ROLE_PERMISSIONS_UPDATED: 'ROLE_PERMISSIONS_UPDATED',
 } as const;
 
 export type AuthAuditEvent = (typeof AUTH_AUDIT_EVENTS)[keyof typeof AUTH_AUDIT_EVENTS];

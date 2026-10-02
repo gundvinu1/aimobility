@@ -5,18 +5,9 @@
 // =============================================================================
 
 // NOTE: ROLES and PERMISSIONS moved to auth.ts (Module 2)
+// NOTE: VEHICLE_STATUS moved to vehicle.ts (Module 5)
+// NOTE: DRIVER_STATUS moved to driver.ts (Module 6)
+// NOTE: BOOKING_STATUS moved to booking.ts (Module 7)
+// NOTE: TRIP_STATUS moved to trip.ts (Module 7)
 
-/**
- * @placeholder - Booking status values will be defined in the Booking module
- */
-export const BOOKING_STATUS = {} as const;
-
-/**
- * @placeholder - Trip status values will be defined in the Trips + GPS module
- */
-export const TRIP_STATUS = {} as const;
-
-/**
- * @placeholder - Vehicle status values will be defined in the Vehicle / Fleet module
- */
-export const VEHICLE_STATUS = {} as const;
+export {};

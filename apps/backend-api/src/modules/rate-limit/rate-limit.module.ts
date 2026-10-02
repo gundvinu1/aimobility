@@ -8,12 +8,12 @@ import { APP_GUARD } from '@nestjs/core';
       {
         name: 'short',
         ttl: 60_000,    // 1 minute
-        limit: 20,      // 20 requests per minute per IP
+        limit: 120,     // 120 requests per minute per IP
       },
       {
         name: 'medium',
         ttl: 600_000,   // 10 minutes
-        limit: 60,      // 60 requests per 10 minutes per IP
+        limit: 600,     // 600 requests per 10 minutes per IP
       },
     ]),
   ],

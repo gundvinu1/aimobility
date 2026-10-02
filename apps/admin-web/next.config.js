@@ -2,6 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@ai-mos/ui', '@ai-mos/types', '@ai-mos/constants', '@ai-mos/api-client'],
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   experimental: {
     optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
   },

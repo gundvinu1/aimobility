@@ -1,0 +1,15 @@
+{
+  "extends": "./packages/config/typescript/base.json",
+  "compilerOptions": {
+    "baseUrl": "."
+  },
+  "references": [
+    { "path": "./packages/constants" },
+    { "path": "./packages/types" },
+    { "path": "./packages/database" },
+    { "path": "./apps/backend-api" },
+    { "path": "./apps/admin-web" }
+  ],
+  "files": [],
+  "include": []
+}

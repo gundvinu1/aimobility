@@ -25,35 +25,131 @@
  * ───────────────────────────────────────────────────────────
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { PrismaClient } from '@prisma/client';
-import * as argon2 from 'argon2';
+
+// Load .env if not already set
+if (!process.env.DATABASE_URL) {
+  const envPaths = [
+    path.resolve(__dirname, '../.env'),
+    path.resolve(__dirname, '../../../.env'),
+  ];
+  for (const envPath of envPaths) {
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, 'utf-8');
+      for (const line of content.split('\n')) {
+        const match = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)?\s*$/);
+        if (match && !process.env[match[1]]) {
+          process.env[match[1]] = (match[2] || '').trim().replace(/^['"]|['"]$/g, '');
+        }
+      }
+    }
+  }
+}
+
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'postgresql://aimosuser:aimospassword@localhost:5432/aimosdb?schema=public';
+}
 
 const prisma = new PrismaClient();
 
-// ─── Test password (same for all dev users) ──────────────────────────────────
-const TEST_PASSWORD = 'Admin@12345!';
+import { scryptSync } from 'crypto';
+
+function hashPassword(password: string): string {
+  const salt = 'a1b2c3d4e5f60718';
+  const derivedKey = scryptSync(password, salt, 64);
+  return `$scrypt$${salt}$${derivedKey.toString('hex')}`;
+}
+
+const SEED_PASSWORD_HASH = hashPassword('Admin@12345!');
 
 const ROLES = [
-  { name: 'SUPER_ADMIN', description: 'Full platform access — internal use only' },
-  { name: 'OWNER',       description: 'Company owner with full tenant access' },
-  { name: 'ADMIN',       description: 'Tenant administrator' },
-  { name: 'MANAGER',     description: 'Operational manager' },
-  { name: 'DISPATCHER',  description: 'Handles dispatch and trip assignments' },
-  { name: 'ACCOUNTANT',  description: 'Access to billing and financial reports' },
-  { name: 'DRIVER',      description: 'Driver with limited access to driver app data' },
-  { name: 'CUSTOMER',    description: 'End customer with access to their own bookings' },
+  { name: 'SUPER_ADMIN', description: 'Full platform access — internal use only', scope: 'PLATFORM', level: 100, isSystem: true },
+  { name: 'OWNER',       description: 'Company owner with full tenant access',    scope: 'COMPANY',  level: 80,  isSystem: true },
+  { name: 'ADMIN',       description: 'Tenant administrator',                     scope: 'COMPANY',  level: 60,  isSystem: true },
+  { name: 'MANAGER',     description: 'Operational manager',                      scope: 'COMPANY',  level: 40,  isSystem: true },
+  { name: 'DISPATCHER',  description: 'Handles dispatch and trip assignments',    scope: 'COMPANY',  level: 30,  isSystem: true },
+  { name: 'ACCOUNTANT',  description: 'Access to billing and financial reports',  scope: 'COMPANY',  level: 30,  isSystem: true },
+  { name: 'DRIVER',      description: 'Driver with access to driver tasks/trips', scope: 'COMPANY',  level: 20,  isSystem: true },
+  { name: 'CUSTOMER',    description: 'End customer with access to bookings',     scope: 'COMPANY',  level: 10,  isSystem: true },
 ] as const;
 
 const PERMISSIONS = [
-  { name: 'user.read',        description: 'Read user records' },
-  { name: 'user.write',       description: 'Create and update users' },
-  { name: 'user.delete',      description: 'Soft-delete users' },
-  { name: 'profile.read',     description: 'Read own profile' },
-  { name: 'profile.write',    description: 'Update own profile' },
-  { name: 'role.read',        description: 'Read roles' },
-  { name: 'role.write',       description: 'Create and update roles' },
-  { name: 'permission.read',  description: 'Read permissions' },
-  { name: 'permission.write', description: 'Create and update permissions' },
+  // Module 2 — Auth/User management
+  { name: 'user.read',                 description: 'Read user records',                     module: 'AUTH',     action: 'READ' },
+  { name: 'user.write',                description: 'Create and update users',               module: 'AUTH',     action: 'UPDATE' },
+  { name: 'user.delete',               description: 'Soft-delete users',                     module: 'AUTH',     action: 'DELETE' },
+  { name: 'profile.read',              description: 'Read own profile',                      module: 'AUTH',     action: 'READ' },
+  { name: 'profile.write',             description: 'Update own profile',                    module: 'AUTH',     action: 'UPDATE' },
+
+  // Module 8B — RBAC management
+  { name: 'role.read',                 description: 'View roles and hierarchy',              module: 'RBAC',     action: 'READ' },
+  { name: 'role.write',                description: 'Create and update roles',               module: 'RBAC',     action: 'UPDATE' },
+  { name: 'role.create',               description: 'Create custom roles',                   module: 'RBAC',     action: 'CREATE' },
+  { name: 'role.update',               description: 'Update custom roles',                   module: 'RBAC',     action: 'UPDATE' },
+  { name: 'role.delete',               description: 'Delete custom roles',                   module: 'RBAC',     action: 'DELETE' },
+  { name: 'permission.read',           description: 'View permissions and matrix',           module: 'RBAC',     action: 'READ' },
+  { name: 'permission.write',          description: 'Manage permissions',                    module: 'RBAC',     action: 'UPDATE' },
+  { name: 'permission.assign',         description: 'Assign/toggle role permissions',        module: 'RBAC',     action: 'ASSIGN' },
+
+  // Module 3 — Company management
+  { name: 'company.read',              description: 'Read company records',                  module: 'COMPANY',  action: 'READ' },
+  { name: 'company.create',            description: 'Create a company',                      module: 'COMPANY',  action: 'CREATE' },
+  { name: 'company.update',            description: 'Update company profile',                module: 'COMPANY',  action: 'UPDATE' },
+  { name: 'company.delete',            description: 'Deactivate a company',                  module: 'COMPANY',  action: 'DELETE' },
+  { name: 'company.settings.read',     description: 'Read company settings',                 module: 'COMPANY',  action: 'READ' },
+  { name: 'company.settings.write',    description: 'Update company settings',                module: 'COMPANY',  action: 'UPDATE' },
+  { name: 'company.members.read',      description: 'Read company members',                  module: 'COMPANY',  action: 'READ' },
+  { name: 'company.members.write',     description: 'Manage company members',                module: 'COMPANY',  action: 'UPDATE' },
+  { name: 'company.invite',            description: 'Invite users to a company',             module: 'COMPANY',  action: 'CREATE' },
+
+  // Module 4 — Employee management
+  { name: 'employee.read',             description: 'Read employee directory and details',   module: 'EMPLOYEE', action: 'READ' },
+  { name: 'employee.create',           description: 'Create employee records',               module: 'EMPLOYEE', action: 'CREATE' },
+  { name: 'employee.update',           description: 'Update employee records',               module: 'EMPLOYEE', action: 'UPDATE' },
+  { name: 'employee.delete',           description: 'Soft-delete employee records',          module: 'EMPLOYEE', action: 'DELETE' },
+  { name: 'employee.status.write',     description: 'Update employee employment status',     module: 'EMPLOYEE', action: 'UPDATE' },
+  { name: 'employee.user.link',        description: 'Link/unlink user account to employee',   module: 'EMPLOYEE', action: 'UPDATE' },
+
+  // Module 5 — Vehicle management
+  { name: 'vehicle.read',              description: 'Read vehicle directory and details',    module: 'VEHICLE',  action: 'READ' },
+  { name: 'vehicle.create',            description: 'Create vehicle records',                module: 'VEHICLE',  action: 'CREATE' },
+  { name: 'vehicle.update',            description: 'Update vehicle records',                module: 'VEHICLE',  action: 'UPDATE' },
+  { name: 'vehicle.delete',            description: 'Delete vehicle records',                module: 'VEHICLE',  action: 'DELETE' },
+  { name: 'vehicle.status.write',      description: 'Update vehicle operational status',     module: 'VEHICLE',  action: 'UPDATE' },
+  { name: 'vehicle.document.manage',   description: 'Manage vehicle compliance documents',   module: 'VEHICLE',  action: 'MANAGE' },
+  { name: 'vehicle.maintenance.manage',description: 'Manage vehicle maintenance records',    module: 'VEHICLE',  action: 'MANAGE' },
+
+  // Module 6 — Driver management
+  { name: 'driver.read',               description: 'Read driver profiles',                  module: 'DRIVER',   action: 'READ' },
+  { name: 'driver.create',             description: 'Create driver records',                 module: 'DRIVER',   action: 'CREATE' },
+  { name: 'driver.update',             description: 'Update driver records',                 module: 'DRIVER',   action: 'UPDATE' },
+  { name: 'driver.delete',             description: 'Delete driver records',                 module: 'DRIVER',   action: 'DELETE' },
+  { name: 'driver.status.update',      description: 'Update driver operational status',      module: 'DRIVER',   action: 'UPDATE' },
+  { name: 'driver.duty.update',        description: 'Toggle driver on/off duty status',      module: 'DRIVER',   action: 'UPDATE' },
+  { name: 'driver.documents.read',     description: 'Read driver documents',                 module: 'DRIVER',   action: 'READ' },
+  { name: 'driver.documents.write',    description: 'Manage driver documents',                module: 'DRIVER',   action: 'UPDATE' },
+  { name: 'driver.vehicle.assign',     description: 'Assign or unassign vehicle to driver',  module: 'DRIVER',   action: 'UPDATE' },
+
+  // Module 7 — Booking management
+  { name: 'booking.read',              description: 'Read booking requests',                 module: 'BOOKING',  action: 'READ' },
+  { name: 'booking.create',            description: 'Create booking requests',               module: 'BOOKING',  action: 'CREATE' },
+  { name: 'booking.update',            description: 'Update booking details',                module: 'BOOKING',  action: 'UPDATE' },
+  { name: 'booking.delete',            description: 'Delete booking requests',               module: 'BOOKING',  action: 'DELETE' },
+  { name: 'booking.confirm',           description: 'Confirm booking requests',              module: 'BOOKING',  action: 'UPDATE' },
+  { name: 'booking.cancel',            description: 'Cancel booking requests',               module: 'BOOKING',  action: 'UPDATE' },
+
+  // Module 7 — Trip & Dispatch management
+  { name: 'trip.read',                 description: 'Read trips',                            module: 'TRIP',     action: 'READ' },
+  { name: 'trip.create',               description: 'Create trips',                          module: 'TRIP',     action: 'CREATE' },
+  { name: 'trip.update',               description: 'Update trips',                          module: 'TRIP',     action: 'UPDATE' },
+  { name: 'trip.delete',               description: 'Delete trips',                          module: 'TRIP',     action: 'DELETE' },
+  { name: 'trip.assign.driver',        description: 'Assign driver to trip',                 module: 'TRIP',     action: 'UPDATE' },
+  { name: 'trip.assign.vehicle',       description: 'Assign vehicle to trip',                module: 'TRIP',     action: 'UPDATE' },
+  { name: 'trip.dispatch',             description: 'Dispatch trips to drivers',             module: 'TRIP',     action: 'DISPATCH' },
+  { name: 'trip.status.update',        description: 'Update trip operational status',        module: 'TRIP',     action: 'UPDATE' },
+  { name: 'trip.cancel',               description: 'Cancel trips',                          module: 'TRIP',     action: 'UPDATE' },
 ] as const;
 
 /** Role → permissions mapping */
@@ -61,24 +157,110 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   SUPER_ADMIN: [
     'user.read', 'user.write', 'user.delete',
     'profile.read', 'profile.write',
-    'role.read', 'role.write',
-    'permission.read', 'permission.write',
+    'role.read', 'role.write', 'role.create', 'role.update', 'role.delete',
+    'permission.read', 'permission.write', 'permission.assign',
+    // Module 3
+    'company.read', 'company.create', 'company.update', 'company.delete',
+    'company.settings.read', 'company.settings.write',
+    'company.members.read', 'company.members.write', 'company.invite',
+    // Module 4
+    'employee.read', 'employee.create', 'employee.update', 'employee.delete',
+    'employee.status.write', 'employee.user.link',
+    // Module 5
+    'vehicle.read', 'vehicle.create', 'vehicle.update', 'vehicle.delete',
+    'vehicle.status.write', 'vehicle.document.manage', 'vehicle.maintenance.manage',
+    // Module 6
+    'driver.read', 'driver.create', 'driver.update', 'driver.delete',
+    'driver.status.update', 'driver.duty.update', 'driver.documents.read',
+    'driver.documents.write', 'driver.vehicle.assign',
+    // Module 7
+    'booking.read', 'booking.create', 'booking.update', 'booking.delete',
+    'booking.confirm', 'booking.cancel',
+    'trip.read', 'trip.create', 'trip.update', 'trip.delete',
+    'trip.assign.driver', 'trip.assign.vehicle', 'trip.dispatch',
+    'trip.status.update', 'trip.cancel',
   ],
   OWNER: [
     'user.read', 'user.write',
     'profile.read', 'profile.write',
-    'role.read', 'permission.read',
+    'role.read', 'role.write', 'role.create', 'role.update', 'role.delete',
+    'permission.read', 'permission.write', 'permission.assign',
+    // Module 3
+    'company.read', 'company.create', 'company.update', 'company.delete',
+    'company.settings.read', 'company.settings.write',
+    'company.members.read', 'company.members.write', 'company.invite',
+    // Module 4
+    'employee.read', 'employee.create', 'employee.update', 'employee.delete',
+    'employee.status.write', 'employee.user.link',
+    // Module 5
+    'vehicle.read', 'vehicle.create', 'vehicle.update', 'vehicle.delete',
+    'vehicle.status.write', 'vehicle.document.manage', 'vehicle.maintenance.manage',
+    // Module 6
+    'driver.read', 'driver.create', 'driver.update', 'driver.delete',
+    'driver.status.update', 'driver.duty.update', 'driver.documents.read',
+    'driver.documents.write', 'driver.vehicle.assign',
+    // Module 7
+    'booking.read', 'booking.create', 'booking.update', 'booking.delete',
+    'booking.confirm', 'booking.cancel',
+    'trip.read', 'trip.create', 'trip.update', 'trip.delete',
+    'trip.assign.driver', 'trip.assign.vehicle', 'trip.dispatch',
+    'trip.status.update', 'trip.cancel',
   ],
   ADMIN: [
     'user.read', 'user.write',
     'profile.read', 'profile.write',
     'role.read', 'permission.read',
+    // Module 3
+    'company.read', 'company.update',
+    'company.settings.read', 'company.settings.write',
+    'company.members.read', 'company.members.write', 'company.invite',
+    // Module 4
+    'employee.read', 'employee.create', 'employee.update', 'employee.delete',
+    'employee.status.write', 'employee.user.link',
+    // Module 5
+    'vehicle.read', 'vehicle.create', 'vehicle.update', 'vehicle.delete',
+    'vehicle.status.write', 'vehicle.document.manage', 'vehicle.maintenance.manage',
+    // Module 6
+    'driver.read', 'driver.create', 'driver.update', 'driver.delete',
+    'driver.status.update', 'driver.duty.update', 'driver.documents.read',
+    'driver.documents.write', 'driver.vehicle.assign',
+    // Module 7
+    'booking.read', 'booking.create', 'booking.update', 'booking.delete',
+    'booking.confirm', 'booking.cancel',
+    'trip.read', 'trip.create', 'trip.update', 'trip.delete',
+    'trip.assign.driver', 'trip.assign.vehicle', 'trip.dispatch',
+    'trip.status.update', 'trip.cancel',
   ],
-  MANAGER:    ['user.read', 'profile.read', 'profile.write'],
-  DISPATCHER: ['user.read', 'profile.read', 'profile.write'],
-  ACCOUNTANT: ['user.read', 'profile.read', 'profile.write'],
-  DRIVER:     ['profile.read', 'profile.write'],
-  CUSTOMER:   ['profile.read', 'profile.write'],
+  MANAGER: [
+    'user.read', 'profile.read', 'profile.write', 'company.read', 'company.members.read',
+    'employee.read', 'employee.create', 'employee.update', 'employee.status.write',
+    'vehicle.read', 'vehicle.create', 'vehicle.update', 'vehicle.status.write',
+    'vehicle.document.manage', 'vehicle.maintenance.manage',
+    'driver.read', 'driver.create', 'driver.update', 'driver.status.update',
+    'driver.duty.update', 'driver.documents.read', 'driver.documents.write', 'driver.vehicle.assign',
+    'booking.read', 'booking.create', 'booking.update', 'booking.confirm', 'booking.cancel',
+    'trip.read', 'trip.create', 'trip.update', 'trip.assign.driver', 'trip.assign.vehicle',
+    'trip.dispatch', 'trip.status.update', 'trip.cancel',
+  ],
+  DISPATCHER: [
+    'company.read', 'profile.read', 'profile.write',
+    'vehicle.read', 'driver.read', 'driver.duty.update', 'driver.vehicle.assign',
+    'booking.read', 'booking.create', 'booking.update', 'booking.confirm', 'booking.cancel',
+    'trip.read', 'trip.create', 'trip.update', 'trip.assign.driver', 'trip.assign.vehicle',
+    'trip.dispatch', 'trip.status.update', 'trip.cancel',
+  ],
+  ACCOUNTANT: [
+    'company.read', 'profile.read', 'profile.write',
+    'booking.read', 'trip.read',
+  ],
+  DRIVER: [
+    'profile.read', 'profile.write',
+    'trip.read', 'trip.status.update', 'driver.duty.update', 'vehicle.read',
+  ],
+  CUSTOMER: [
+    'profile.read', 'profile.write',
+    'booking.read', 'booking.create', 'booking.cancel', 'trip.read',
+  ],
 };
 
 /** Test users — one per role */
@@ -102,11 +284,22 @@ async function main() {
   for (const role of ROLES) {
     const r = await prisma.role.upsert({
       where:  { name: role.name },
-      update: { description: role.description },
-      create: { name: role.name, description: role.description },
+      update: {
+        description: role.description,
+        scope: role.scope,
+        level: role.level,
+        isSystem: role.isSystem,
+      },
+      create: {
+        name: role.name,
+        description: role.description,
+        scope: role.scope,
+        level: role.level,
+        isSystem: role.isSystem,
+      },
     });
     roleMap[role.name] = r.id;
-    console.log(`  ✅ ${role.name}`);
+    console.log(`  ✅ ${role.name.padEnd(12)} [${role.scope} - Level ${role.level}]`);
   }
 
   // ── 2. Permissions ────────────────────────────────────────────────────────
@@ -115,8 +308,17 @@ async function main() {
   for (const perm of PERMISSIONS) {
     const p = await prisma.permission.upsert({
       where:  { name: perm.name },
-      update: { description: perm.description },
-      create: { name: perm.name, description: perm.description },
+      update: {
+        description: perm.description,
+        module: perm.module,
+        action: perm.action,
+      },
+      create: {
+        name: perm.name,
+        description: perm.description,
+        module: perm.module,
+        action: perm.action,
+      },
     });
     permMap[perm.name] = p.id;
     console.log(`  ✅ ${perm.name}`);
@@ -127,9 +329,14 @@ async function main() {
   for (const [roleName, permNames] of Object.entries(ROLE_PERMISSIONS)) {
     const roleId = roleMap[roleName];
     if (!roleId) continue;
-    for (const permName of permNames) {
-      const permId = permMap[permName];
-      if (!permId) continue;
+    const targetPermIds = permNames.map((p) => permMap[p]).filter((id): id is string => !!id);
+    await prisma.rolePermission.deleteMany({
+      where: {
+        roleId,
+        permissionId: { notIn: targetPermIds },
+      },
+    });
+    for (const permId of targetPermIds) {
       await prisma.rolePermission.upsert({
         where:  { roleId_permissionId: { roleId, permissionId: permId } },
         update: {},
@@ -141,24 +348,18 @@ async function main() {
 
   // ── 4. Test users ─────────────────────────────────────────────────────────
   console.log('\n👤 Seeding test users...');
-  const passwordHash = await argon2.hash(TEST_PASSWORD, {
-    type: argon2.argon2id,
-    memoryCost: 65536,
-    timeCost: 3,
-    parallelism: 4,
-  });
 
   for (const u of TEST_USERS) {
     const roleId = roleMap[u.role];
     if (!roleId) continue;
 
-    // Upsert user
+    // Upsert user — update password hash so Admin@12345! always works
     const user = await prisma.user.upsert({
       where:  { email: u.email },
-      update: { firstName: u.firstName, lastName: u.lastName, passwordHash },
+      update: { firstName: u.firstName, lastName: u.lastName, passwordHash: SEED_PASSWORD_HASH },
       create: {
         email:         u.email,
-        passwordHash,
+        passwordHash:  SEED_PASSWORD_HASH,
         firstName:     u.firstName,
         lastName:      u.lastName,
         status:        'ACTIVE',
