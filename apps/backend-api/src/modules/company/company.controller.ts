@@ -25,6 +25,7 @@ import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UpdateCompanySettingsDto } from './dto/update-company-settings.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
+import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { CreateInvitationDto } from './dto/create-invitation.dto';
 import { TenantGuard } from './guards/tenant.guard';
 import { CurrentCompany } from './decorators/current-company.decorator';
@@ -203,6 +204,45 @@ export class CompanyController {
   ) {
     return this.companyService.updateMember(
       companyId, userId, dto, user.userId, tenant.role, getMeta(req),
+    );
+  }
+
+  // ─── Member Role Management (Module 8B) ──────────────────────────────────────
+
+  @Get(':companyId/members/:memberId/role')
+  @UseGuards(TenantGuard)
+  @ApiOperation({ summary: 'Get current role and available assignable roles for a member' })
+  @ApiParam({ name: 'companyId', description: 'Company UUID' })
+  @ApiParam({ name: 'memberId', description: 'Member user or membership UUID' })
+  async getMemberRole(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('memberId', ParseUUIDPipe) memberId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.companyService.getMemberRole(companyId, memberId, user);
+  }
+
+  @Patch(':companyId/members/:memberId/role')
+  @UseGuards(TenantGuard)
+  @CompanyRoles('OWNER', 'ADMIN')
+  @ApiOperation({ summary: 'Update a company member role (OWNER/ADMIN only, with level checks)' })
+  @ApiParam({ name: 'companyId', description: 'Company UUID' })
+  @ApiParam({ name: 'memberId', description: 'Member user or membership UUID' })
+  async updateMemberRole(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('memberId', ParseUUIDPipe) memberId: string,
+    @Body() dto: UpdateMemberRoleDto,
+    @CurrentUser() user: AuthUser,
+    @CurrentCompany() tenant: TenantContext,
+    @Req() req: Request,
+  ) {
+    return this.companyService.updateMemberRole(
+      companyId,
+      memberId,
+      dto.role,
+      user.userId,
+      tenant.role,
+      getMeta(req),
     );
   }
 

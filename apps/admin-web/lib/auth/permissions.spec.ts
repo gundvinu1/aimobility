@@ -69,6 +69,11 @@ describe('Role-Based UI & Permission Access Control System', () => {
       expect(perms).toContain('vehicle.delete');
       expect(perms).toContain('employee.delete');
       expect(perms).toContain('trip.dispatch');
+      expect(perms).toContain('geofence.create');
+      expect(perms).toContain('geofence.delete');
+      expect(perms).toContain('alert.read');
+      expect(perms).toContain('alert.configure');
+      expect(perms).toContain('alert.resolve');
     });
 
     it('resolves DRIVER permissions when specialized role is DRIVER in companyB', () => {
@@ -82,6 +87,8 @@ describe('Role-Based UI & Permission Access Control System', () => {
       expect(perms).toContain('driver.duty.update');
       expect(perms).not.toContain('vehicle.create');
       expect(perms).not.toContain('employee.create');
+      expect(perms).not.toContain('alert.configure');
+      expect(perms).not.toContain('geofence.create');
     });
 
     it('resolves DISPATCHER permissions for dispatcher users', () => {
@@ -94,8 +101,12 @@ describe('Role-Based UI & Permission Access Control System', () => {
       expect(perms).toContain('trip.dispatch');
       expect(perms).toContain('booking.read');
       expect(perms).toContain('vehicle.read');
+      expect(perms).toContain('alert.read');
+      expect(perms).toContain('alert.acknowledge');
       expect(perms).not.toContain('employee.create');
       expect(perms).not.toContain('company.settings.write');
+      expect(perms).not.toContain('alert.configure');
+      expect(perms).not.toContain('geofence.delete');
     });
 
     it('resolves ACCOUNTANT permissions for accountant users', () => {
@@ -110,6 +121,8 @@ describe('Role-Based UI & Permission Access Control System', () => {
       expect(perms).toContain('company.read');
       expect(perms).not.toContain('vehicle.delete');
       expect(perms).not.toContain('trip.dispatch');
+      expect(perms).not.toContain('alert.configure');
+      expect(perms).not.toContain('geofence.create');
     });
 
     it('resolves CUSTOMER permissions for customer users', () => {

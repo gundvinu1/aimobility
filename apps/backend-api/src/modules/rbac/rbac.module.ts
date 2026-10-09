@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
-import { RbacController } from './rbac.controller';
+import { RolesController, PermissionsController } from './rbac.controller';
 import { RbacService } from './rbac.service';
 import { DatabaseModule } from '../database/database.module';
 
 @Module({
   imports: [DatabaseModule],
-  controllers: [RbacController],
+  controllers: [RolesController, PermissionsController],
   providers: [RbacService],
   exports: [RbacService],
 })

@@ -94,7 +94,7 @@ model User {
 /// Platform and Company role
 model Role {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name        String   @unique
+  name        String
   description String?
   scope       String   @default("COMPANY")
   level       Int      @default(10)
@@ -108,6 +108,7 @@ model Role {
   permissions RolePermission[]
   company     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@unique([name, companyId])
   @@index([scope])
   @@index([companyId])
   @@map("roles")
@@ -258,15 +259,30 @@ model Company {
   deletedAt   DateTime?
 
   // Relations
-  settings    CompanySettings?
-  members     UserCompany[]
-  invitations CompanyInvitation[]
-  employees   Employee[]
-  vehicles    Vehicle[]
-  drivers     Driver[]
-  bookings    Booking[]
-  trips       Trip[]
-  roles       Role[]
+  settings          CompanySettings?
+  members           UserCompany[]
+  invitations       CompanyInvitation[]
+  employees         Employee[]
+  vehicles          Vehicle[]
+  drivers           Driver[]
+  bookings          Booking[]
+  trips             Trip[]
+  roles             Role[]
+  vehicleLocations  VehicleLocation[]
+  vehicleTelemetry  VehicleTelemetry[]
+  geofences         Geofence[]
+  geofenceVehicles  GeofenceVehicle[]
+  alertConfig       CompanyAlertConfig?
+  fleetAlerts       FleetAlert[]
+  fuelTransactions  FuelTransaction[]
+  maintenanceSchedules MaintenanceSchedule[]
+  maintenanceRecords MaintenanceRecord[]
+  workOrders        WorkOrder[]
+  workOrderItems    WorkOrderItem[]
+  vendors           Vendor[]
+  vendorInvoices    VendorInvoice[]
+  vehicleExpenses   VehicleExpense[]
+  tripStops         TripStop[]
 
   @@index([slug])
   @@index([status])
@@ -536,11 +552,21 @@ model Vehicle {
   deletedAt      DateTime?
 
   // ─── Relations ────────────────────────────────────────────────────────────
-  company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  documents     VehicleDocument[]
-  maintenances  VehicleMaintenance[]
+  company           Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documents         VehicleDocument[]
+  maintenances      VehicleMaintenance[]
   driverAssignments DriverVehicleAssignment[]
-  trips         Trip[]
+  trips             Trip[]
+  location          VehicleLocation?
+  telemetry         VehicleTelemetry[]
+  geofenceAssignments GeofenceVehicle[]
+  fleetAlerts         FleetAlert[]
+  fuelTransactions    FuelTransaction[]
+  maintenanceSchedules MaintenanceSchedule[]
+  maintenanceRecords  MaintenanceRecord[]
+  workOrders          WorkOrder[]
+  vendorInvoices      VendorInvoice[]
+  vehicleExpenses     VehicleExpense[]
 
   // Vehicle number is unique within a company
   @@unique([companyId, vehicleNumber])
@@ -685,6 +711,11 @@ model Driver {
   dutyLogs                DriverDutyLog[]
   vehicleAssignments      DriverVehicleAssignment[]
   trips                   Trip[]
+  locations               VehicleLocation[]
+  telemetry               VehicleTelemetry[]
+  fleetAlerts             FleetAlert[]
+  fuelTransactions        FuelTransaction[]
+  vehicleExpenses         VehicleExpense[]
 
   @@unique([companyId, driverCode])
 
@@ -932,6 +963,11 @@ model Trip {
   driver              Driver?            @relation(fields: [driverId], references: [id], onDelete: SetNull)
   vehicle             Vehicle?           @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
   statusHistory       TripStatusHistory[]
+  fleetAlerts         FleetAlert[]
+  fuelTransactions    FuelTransaction[]
+  vehicleExpenses     VehicleExpense[]
+  routePolyline       String?
+  stops               TripStop[]
 
   @@unique([companyId, tripNumber])
 
@@ -968,5 +1004,643 @@ model TripStatusHistory {
   @@map("trip_status_histories")
 }
 
+// =============================================================================
+// MODULE 12 — MULTI-STOP ROUTING & DISPATCH WAYPOINTS
+// =============================================================================
 
+/// Multi-stop journey stop category
+enum StopType {
+  PICKUP
+  WAYPOINT
+  DROPOFF
+}
 
+/// Execution status for individual stop
+enum StopStatus {
+  PENDING
+  ARRIVED
+  COMPLETED
+  SKIPPED
+}
+
+/// Sequenced waypoints/stops for multi-stop trips
+model TripStop {
+  id               String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId        String     @db.Uuid
+  tripId           String     @db.Uuid
+
+  stopOrder        Int        // 1-indexed execution sequence
+  stopType         StopType   @default(WAYPOINT)
+  locationName     String
+  address          String?
+  latitude         Float
+  longitude        Float
+
+  plannedArrival   DateTime?
+  plannedDeparture DateTime?
+  actualArrival    DateTime?
+  actualDeparture  DateTime?
+
+  passengerName    String?
+  passengerPhone   String?
+  notes            String?
+  status           StopStatus @default(PENDING)
+
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  company          Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  trip             Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, stopOrder])
+  @@index([companyId])
+  @@index([tripId])
+  @@index([status])
+
+  @@map("trip_stops")
+}
+
+// =============================================================================
+// MODULE 9 — REAL-TIME FLEET TRACKING & TELEMETRY
+// =============================================================================
+
+/// Source of telemetry data (provider-independent)
+enum TelemetrySource {
+  MANUAL
+  MOBILE
+  GPS_DEVICE
+  IOT
+  SIMULATOR
+  API
+}
+
+/// Latest known location per vehicle (upserted on every event)
+/// This is the hot-path read model for the fleet map.
+model VehicleLocation {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String    @db.Uuid
+  vehicleId String    @unique @db.Uuid  // One location per vehicle
+  driverId  String?   @db.Uuid
+
+  latitude  Float
+  longitude Float
+  speed     Float     @default(0)     // km/h
+  heading   Float?                    // degrees 0-360
+  accuracy  Float?                    // metres
+  altitude  Float?                    // metres
+  ignition  Boolean   @default(false)
+
+  // Optional extended telemetry
+  batteryLevel      Float?   // percentage 0-100
+  odometer          Int?     // km
+  engineTemperature Float?   // celsius
+  fuelLevel         Float?   // percentage 0-100
+  signalStrength    Int?     // dBm or percentage
+
+  source    TelemetrySource @default(API)
+  timestamp DateTime        // device/event timestamp
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  // Relations
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  driver    Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([companyId, vehicleId])
+  @@index([driverId])
+  @@index([timestamp])
+
+  @@map("vehicle_locations")
+}
+
+/// Historical telemetry events (append-only, bounded by time window queries)
+/// Designed for future partitioning / TimescaleDB migration.
+model VehicleTelemetry {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String    @db.Uuid
+  vehicleId String    @db.Uuid
+  driverId  String?   @db.Uuid
+
+  latitude  Float
+  longitude Float
+  speed     Float     @default(0)
+  heading   Float?
+  accuracy  Float?
+  altitude  Float?
+  ignition  Boolean   @default(false)
+
+  // Optional extended telemetry
+  batteryLevel      Float?
+  odometer          Int?
+  engineTemperature Float?
+  fuelLevel         Float?
+  signalStrength    Int?
+
+  source    TelemetrySource @default(API)
+  timestamp DateTime        // device/event timestamp
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  driver    Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, vehicleId, timestamp])
+  @@index([companyId, timestamp])
+  @@index([vehicleId, timestamp])
+  @@index([driverId])
+
+  @@map("vehicle_telemetry")
+}
+
+// =============================================================================
+// MODULE 10 — GEOFENCING, SPEEDING & FLEET ALERT MANAGEMENT
+// =============================================================================
+
+/// Geometric boundary classification
+enum GeofenceType {
+  CIRCLE
+  POLYGON
+}
+
+/// Operational and safety alert categories
+enum FleetAlertType {
+  GEOFENCE_ENTRY
+  GEOFENCE_EXIT
+  OVERSPEED
+  HARSH_BRAKING
+  EXCESSIVE_IDLE
+  FUEL_DROP
+  MAINTENANCE_DUE
+}
+
+/// Severity classification for fleet alerts
+enum FleetAlertSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+/// Operational alert workflow lifecycle
+enum FleetAlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  DISMISSED
+}
+
+/// Geographic zone defined for fleet tracking and rule enforcement
+model Geofence {
+  id                 String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId          String       @db.Uuid
+  name               String
+  description        String?
+  type               GeofenceType @default(CIRCLE)
+  geometry           Json         // { center: { latitude, longitude }, radiusMeters } or { coordinates: [{ latitude, longitude }] }
+  color              String       @default("#3b82f6")
+  isActive           Boolean      @default(true)
+  entryAlertEnabled  Boolean      @default(true)
+  exitAlertEnabled   Boolean      @default(true)
+  createdBy          String?      @db.Uuid
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  // Relations
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedVehicles GeofenceVehicle[]
+  alerts           FleetAlert[]
+
+  @@index([companyId])
+  @@index([companyId, isActive])
+  @@map("geofences")
+}
+
+/// Vehicle ↔ Geofence assignment join table
+model GeofenceVehicle {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId  String   @db.Uuid
+  geofenceId String   @db.Uuid
+  vehicleId  String   @db.Uuid
+  assignedAt DateTime @default(now())
+
+  // Relations
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  geofence Geofence @relation(fields: [geofenceId], references: [id], onDelete: Cascade)
+  vehicle  Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@unique([geofenceId, vehicleId])
+  @@index([companyId])
+  @@index([vehicleId])
+  @@index([geofenceId])
+  @@map("geofence_vehicles")
+}
+
+/// Company-level configuration for alert rules and thresholds
+model CompanyAlertConfig {
+  id                            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId                     String   @unique @db.Uuid
+  overspeedEnabled              Boolean  @default(true)
+  overspeedThresholdKmH         Float    @default(80.0)
+  overspeedGracePeriodSeconds   Int      @default(10)
+  harshBrakingEnabled           Boolean  @default(true)
+  harshBrakingThresholdKmhPerSec Float   @default(20.0)
+  excessiveIdleEnabled          Boolean  @default(true)
+  excessiveIdleThresholdMinutes Int      @default(15)
+  geofenceEntryAlertsEnabled    Boolean  @default(true)
+  geofenceExitAlertsEnabled     Boolean  @default(true)
+  fuelDropEnabled               Boolean  @default(true)
+  fuelDropThresholdLiters       Float    @default(10.0)
+  maintenanceAlertsEnabled      Boolean  @default(true)
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("company_alert_configs")
+}
+
+/// Operational and safety alert record generated by the alert engine
+model FleetAlert {
+  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId       String             @db.Uuid
+  vehicleId       String             @db.Uuid
+  driverId        String?            @db.Uuid
+  tripId          String?            @db.Uuid
+  geofenceId      String?            @db.Uuid
+  type            FleetAlertType
+  severity        FleetAlertSeverity @default(MEDIUM)
+  status          FleetAlertStatus   @default(OPEN)
+  title           String
+  message         String
+  metadata        Json?
+  latitude        Float?
+  longitude       Float?
+  speed           Float?
+  triggeredAt     DateTime           @default(now())
+  acknowledgedAt  DateTime?
+  acknowledgedBy  String?            @db.Uuid
+  resolvedAt      DateTime?
+  resolvedBy      String?            @db.Uuid
+  dismissedAt     DateTime?
+  dismissedBy     String?            @db.Uuid
+  resolutionNotes String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  // Relations
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vehicle  Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  driver   Driver?   @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  trip     Trip?     @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  geofence Geofence? @relation(fields: [geofenceId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, severity])
+  @@index([companyId, type])
+  @@index([vehicleId])
+  @@index([driverId])
+  @@index([geofenceId])
+  @@index([triggeredAt])
+  @@map("fleet_alerts")
+}
+
+// =============================================================================
+// MODULE 11 — FUEL, MAINTENANCE, WORK ORDERS, VENDORS, INVOICES & EXPENSES
+// =============================================================================
+
+/// Source of fuel transaction record
+enum FuelTransactionSource {
+  MANUAL
+  TELEMATICS
+  FUEL_CARD
+  IMPORT
+}
+
+/// Vendor / supplier classification
+enum VendorType {
+  SERVICE_CENTER
+  MECHANIC
+  FUEL_STATION
+  PARTS_SUPPLIER
+  OTHER
+}
+
+/// Maintenance work order urgency / priority
+enum WorkOrderPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+/// Maintenance work order lifecycle status
+enum WorkOrderStatus {
+  DRAFT
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+/// Work order line item classification
+enum WorkOrderItemType {
+  PARTS
+  LABOR
+  OTHER
+}
+
+/// Vendor invoice payment & processing status
+enum VendorInvoiceStatus {
+  DRAFT
+  RECEIVED
+  PAID
+  CANCELLED
+}
+
+/// Unified fleet operating expense classification
+enum VehicleExpenseCategory {
+  FUEL
+  MAINTENANCE
+  REPAIR
+  PARTS
+  INSURANCE
+  TAX
+  TOLL
+  PARKING
+  CLEANING
+  OTHER
+}
+
+/// Fuel purchase and refuel transaction record
+model FuelTransaction {
+  id                String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId         String                @db.Uuid
+  vehicleId         String                @db.Uuid
+  driverId          String?               @db.Uuid
+  tripId            String?               @db.Uuid
+  vendorId          String?               @db.Uuid
+  fuelType          FuelType              @default(DIESEL)
+  quantityLiters    Float
+  pricePerLiter     Float
+  totalAmount       Float
+  odometer          Int?
+  fuelLevelBefore   Float?
+  fuelLevelAfter    Float?
+  transactionSource FuelTransactionSource @default(MANUAL)
+  reference         String?
+  stationName       String?
+  transactionDate   DateTime              @default(now())
+  notes             String?
+  createdBy         String?               @db.Uuid
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vehicle Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  driver  Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  trip    Trip?    @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  vendor  Vendor?  @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([companyId, transactionDate])
+  @@index([companyId, vehicleId])
+  @@index([vehicleId])
+  @@index([driverId])
+  @@index([tripId])
+  @@index([vendorId])
+  @@map("fuel_transactions")
+}
+
+/// Preventive maintenance service schedule
+model MaintenanceSchedule {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId           String    @db.Uuid
+  vehicleId           String    @db.Uuid
+  serviceType         String
+  description         String?
+  intervalKm          Int?
+  intervalDays        Int?
+  lastServiceOdometer Int?
+  lastServiceDate     DateTime?
+  nextDueOdometer     Int?
+  nextDueDate         DateTime?
+  isActive            Boolean   @default(true)
+  createdBy           String?   @db.Uuid
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  company    Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vehicle    Vehicle             @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  records    MaintenanceRecord[]
+  workOrders WorkOrder[]
+
+  @@index([companyId])
+  @@index([companyId, vehicleId])
+  @@index([companyId, isActive])
+  @@index([vehicleId])
+  @@index([nextDueDate])
+  @@map("maintenance_schedules")
+}
+
+/// Completed maintenance service history
+model MaintenanceRecord {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId   String   @db.Uuid
+  vehicleId   String   @db.Uuid
+  scheduleId  String?  @db.Uuid
+  workOrderId String?  @db.Uuid
+  vendorId    String?  @db.Uuid
+  serviceType String
+  odometer    Int?
+  serviceDate DateTime @default(now())
+  partsCost   Float    @default(0)
+  laborCost   Float    @default(0)
+  tax         Float    @default(0)
+  totalCost   Float    @default(0)
+  description String?
+  notes       String?
+  reference   String?
+  createdBy   String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company   Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle              @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  schedule  MaintenanceSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  workOrder WorkOrder?           @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+  vendor    Vendor?              @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([companyId, serviceDate])
+  @@index([vehicleId])
+  @@index([scheduleId])
+  @@index([workOrderId])
+  @@index([vendorId])
+  @@map("maintenance_records")
+}
+
+/// Third-party service centers, parts suppliers, and fuel stations
+model Vendor {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId     String     @db.Uuid
+  name          String
+  type          VendorType @default(SERVICE_CENTER)
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  taxId         String?
+  isActive      Boolean    @default(true)
+  notes         String?
+  createdBy     String?    @db.Uuid
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fuelTransactions   FuelTransaction[]
+  maintenanceRecords MaintenanceRecord[]
+  workOrders         WorkOrder[]
+  invoices           VendorInvoice[]
+  expenses           VehicleExpense[]
+
+  @@index([companyId])
+  @@index([companyId, isActive])
+  @@index([companyId, type])
+  @@map("vendors")
+}
+
+/// Maintenance work order for repairs and scheduled servicing
+model WorkOrder {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId          String            @db.Uuid
+  vehicleId          String            @db.Uuid
+  vendorId           String?           @db.Uuid
+  scheduleId         String?           @db.Uuid
+  workOrderNumber    String
+  title              String
+  description        String?
+  priority           WorkOrderPriority @default(MEDIUM)
+  status             WorkOrderStatus   @default(DRAFT)
+  assignedTechnician String?
+  estimatedCost      Float             @default(0)
+  actualCost         Float             @default(0)
+  openedAt           DateTime          @default(now())
+  startedAt          DateTime?
+  completedAt        DateTime?
+  notes              String?
+  createdBy          String?           @db.Uuid
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  company  Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vehicle  Vehicle              @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vendor   Vendor?              @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  schedule MaintenanceSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  items    WorkOrderItem[]
+  records  MaintenanceRecord[]
+  invoices VendorInvoice[]
+
+  @@unique([companyId, workOrderNumber])
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, priority])
+  @@index([vehicleId])
+  @@index([vendorId])
+  @@map("work_orders")
+}
+
+/// Parts, labor, and other cost line items for a work order
+model WorkOrderItem {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId   String            @db.Uuid
+  workOrderId String            @db.Uuid
+  itemType    WorkOrderItemType @default(PARTS)
+  description String
+  quantity    Float             @default(1)
+  unitCost    Float             @default(0)
+  totalCost   Float             @default(0)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([workOrderId])
+  @@map("work_order_items")
+}
+
+/// Vendor invoices for work orders, parts, and servicing
+model VendorInvoice {
+  id            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId     String              @db.Uuid
+  vendorId      String              @db.Uuid
+  vehicleId     String?             @db.Uuid
+  workOrderId   String?             @db.Uuid
+  invoiceNumber String
+  invoiceDate   DateTime            @default(now())
+  subtotal      Float               @default(0)
+  tax           Float               @default(0)
+  total         Float               @default(0)
+  status        VendorInvoiceStatus @default(RECEIVED)
+  notes         String?
+  createdBy     String?             @db.Uuid
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vendor    Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle?   @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  workOrder WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, vendorId, invoiceNumber])
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([vendorId])
+  @@index([vehicleId])
+  @@index([workOrderId])
+  @@map("vendor_invoices")
+}
+
+/// Unified vehicle expense record for TCO calculations
+model VehicleExpense {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId            String                 @db.Uuid
+  vehicleId            String                 @db.Uuid
+  driverId             String?                @db.Uuid
+  tripId               String?                @db.Uuid
+  vendorId             String?                @db.Uuid
+  fuelTransactionId    String?                @db.Uuid
+  maintenanceRecordId  String?                @db.Uuid
+  category             VehicleExpenseCategory
+  amount               Float
+  date                 DateTime               @default(now())
+  reference            String?
+  description          String?
+  source               String                 @default("MANUAL")
+  createdBy            String?                @db.Uuid
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vehicle Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  driver  Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  trip    Trip?    @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  vendor  Vendor?  @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([companyId, date])
+  @@index([companyId, category])
+  @@index([vehicleId])
+  @@index([driverId])
+  @@index([tripId])
+  @@index([vendorId])
+  @@map("vehicle_expenses")
+}

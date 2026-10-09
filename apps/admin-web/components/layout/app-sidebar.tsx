@@ -16,6 +16,16 @@ import {
   Route,
   Radio,
   Shield,
+  Navigation,
+  AlertTriangle,
+  Maximize2,
+  Sliders,
+  Fuel,
+  Wrench,
+  ClipboardList,
+  Store,
+  Receipt,
+  BarChart3,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { APP_NAME } from '@ai-mos/constants';
@@ -89,6 +99,66 @@ export function AppSidebar() {
                 href: `/companies/${companyId}/vehicles`,
                 icon: Car,
                 permission: 'vehicle.read',
+              },
+              {
+                label: 'Fleet Tracking',
+                href: `/companies/${companyId}/tracking`,
+                icon: Navigation,
+                permission: 'fleet.tracking.read',
+              },
+              {
+                label: 'Alert Center',
+                href: `/companies/${companyId}/alerts`,
+                icon: AlertTriangle,
+                permission: 'alert.read',
+              },
+              {
+                label: 'Geofences',
+                href: `/companies/${companyId}/geofences`,
+                icon: Maximize2,
+                permission: 'geofence.read',
+              },
+              {
+                label: 'Alert Settings',
+                href: `/companies/${companyId}/alert-settings`,
+                icon: Sliders,
+                permission: 'alert.configure',
+              },
+              {
+                label: 'Fuel Tracking',
+                href: `/companies/${companyId}/fuel`,
+                icon: Fuel,
+                permission: 'fuel.read',
+              },
+              {
+                label: 'Maintenance',
+                href: `/companies/${companyId}/maintenance`,
+                icon: Wrench,
+                permission: 'maintenance.read',
+              },
+              {
+                label: 'Work Orders',
+                href: `/companies/${companyId}/work-orders`,
+                icon: ClipboardList,
+                permission: 'workorder.read',
+              },
+              {
+                label: 'Vendors',
+                href: `/companies/${companyId}/vendors`,
+                icon: Store,
+                permission: 'vendor.read',
+              },
+              {
+                label: 'Vehicle Expenses',
+                href: `/companies/${companyId}/expenses`,
+                icon: Receipt,
+                permission: 'expense.read',
+              },
+              {
+                label: 'Cost Analytics',
+                href: `/companies/${companyId}/cost-analysis`,
+                icon: BarChart3,
+                permission: 'tco.read',
               },
               {
                 label: 'Drivers',

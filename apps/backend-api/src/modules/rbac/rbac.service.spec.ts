@@ -33,16 +33,19 @@ describe('RbacService', () => {
   const otherCompanyId = '22222222-2222-2222-2222-222222222222';
 
   beforeEach(async () => {
+    const roleLookup = jest.fn();
     mockDb = {
       role: {
         findMany: jest.fn(),
-        findUnique: jest.fn(),
+        findUnique: roleLookup,
+        findFirst: roleLookup,
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
       },
       permission: {
         findMany: jest.fn(),
+        findFirst: jest.fn(),
       },
       rolePermission: {
         deleteMany: jest.fn(),
@@ -50,6 +53,8 @@ describe('RbacService', () => {
       },
       userCompany: {
         findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        groupBy: jest.fn().mockResolvedValue([]),
       },
       auditLog: {
         create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
@@ -245,4 +250,71 @@ describe('RbacService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
   });
+
+  describe('updateRole', () => {
+    it('should reject renaming a system role', async () => {
+      mockDb.userCompany.findFirst.mockResolvedValue({ role: 'OWNER' });
+      mockDb.role.findUnique.mockResolvedValueOnce({
+        id: 'role-owner-id',
+        name: 'OWNER',
+        isSystem: true,
+        level: 80,
+      });
+
+      await expect(
+        service.updateRole('role-owner-id', { name: 'RENAMED_OWNER' }, superAdminUser),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('getRole', () => {
+    it('should return role with assigned permissions and users', async () => {
+      mockDb.role.findFirst.mockResolvedValueOnce({
+        id: 'role-mgr-id',
+        name: 'MANAGER',
+        level: 40,
+        scope: 'COMPANY',
+        isSystem: true,
+        companyId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        permissions: [
+          { permission: { id: 'p1', name: 'employee.read', description: 'Read employee', module: 'EMPLOYEE', action: 'READ' } },
+        ],
+        users: [
+          {
+            user: { id: 'u1', email: 'mgr@aimos.dev', firstName: 'Alice', lastName: 'Mgr', status: 'ACTIVE', createdAt: new Date() },
+            assignedAt: new Date(),
+          },
+        ],
+      });
+
+      const res = await service.getRole('role-mgr-id', superAdminUser);
+      expect(res.name).toBe('MANAGER');
+      expect(res.permissions).toHaveLength(1);
+      expect(res.users).toHaveLength(1);
+      expect(res.users?.[0].email).toBe('mgr@aimos.dev');
+    });
+  });
+
+  describe('getPermission', () => {
+    it('should return permission details with associated roles', async () => {
+      mockDb.permission.findFirst.mockResolvedValueOnce({
+        id: 'perm-1',
+        name: 'vehicle.read',
+        description: 'Read vehicles',
+        module: 'VEHICLE',
+        action: 'READ',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        roles: [{ role: { id: 'r1', name: 'ADMIN', scope: 'COMPANY', isSystem: true } }],
+      });
+
+      const res = await service.getPermission('vehicle.read', superAdminUser);
+      expect(res.name).toBe('vehicle.read');
+      expect(res.module).toBe('VEHICLE');
+      expect(res.roles).toHaveLength(1);
+    });
+  });
 });
+

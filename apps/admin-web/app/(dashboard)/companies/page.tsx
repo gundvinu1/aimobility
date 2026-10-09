@@ -114,14 +114,16 @@ export default function CompaniesPage() {
           <p className="text-sm text-muted-foreground mt-2 max-w-xs">
             Create your first company to start managing your mobility operations.
           </p>
-          <Link
-            id="btn-create-first-company"
-            href="/companies/new"
-            className="mt-6 flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            Create your company
-          </Link>
+          <PermissionGate permission="company.create">
+            <Link
+              id="btn-create-first-company"
+              href="/companies/new"
+              className="mt-6 flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              Create your company
+            </Link>
+          </PermissionGate>
         </div>
       )}
 

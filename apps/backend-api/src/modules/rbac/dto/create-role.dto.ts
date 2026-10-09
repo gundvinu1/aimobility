@@ -27,6 +27,11 @@ export class CreateRoleDto {
   @Max(99)
   level?: number;
 
+  @ApiPropertyOptional({ description: 'Target company UUID for tenant-scoped role' })
+  @IsOptional()
+  @IsString()
+  companyId?: string;
+
   @ApiPropertyOptional({ description: 'List of permission IDs or names to assign to this role', type: [String] })
   @IsOptional()
   @IsArray()

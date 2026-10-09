@@ -17,6 +17,10 @@ import { BookingModule } from './modules/booking/booking.module';
 import { TripModule } from './modules/trip/trip.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { RateLimitModule } from './modules/rate-limit/rate-limit.module';
+import { TelemetryModule } from './modules/telemetry/telemetry.module';
+import { GeofenceModule } from './modules/geofence/geofence.module';
+import { AlertModule } from './modules/alert/alert.module';
+import { FleetManagementModule } from './modules/fleet-management/fleet-management.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 
 @Module({
@@ -39,6 +43,10 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
     DriverModule,
     BookingModule,
     TripModule,
+    TelemetryModule,
+    GeofenceModule,
+    AlertModule,
+    FleetManagementModule,
   ],
   providers: [
     // Apply JWT guard globally — use @Public() to opt-out

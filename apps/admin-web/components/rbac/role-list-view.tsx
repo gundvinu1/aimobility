@@ -19,6 +19,8 @@ import {
   AlertCircle,
   RefreshCw,
   X,
+  Users,
+  Edit2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { RouteGuard } from '@/components/auth/route-guard';
@@ -46,6 +48,13 @@ export function RoleListView({ companyId, baseRoute }: RoleListViewProps) {
   const [createLevel, setCreateLevel] = useState(35);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Edit role modal state
+  const [editingRole, setEditingRole] = useState<RoleSummaryDto | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   // Delete modal state
   const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null);
@@ -113,6 +122,37 @@ export function RoleListView({ companyId, baseRoute }: RoleListViewProps) {
     }
   };
 
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!accessToken || !editingRole) return;
+    setIsUpdating(true);
+    setUpdateError(null);
+    try {
+      await rbacApi.updateRole(
+        accessToken,
+        editingRole.id,
+        {
+          name: editingRole.isSystem ? undefined : editName.trim(),
+          description: editDesc.trim(),
+        },
+        companyId,
+      );
+      setEditingRole(null);
+      await loadRoles();
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : 'Failed to update role');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const openEditModal = (role: RoleSummaryDto) => {
+    setEditingRole(role);
+    setEditName(role.name);
+    setEditDesc(role.description ?? '');
+    setUpdateError(null);
+  };
+
   const handleDelete = async (id: string) => {
     if (!accessToken) return;
     setIsDeleting(true);
@@ -129,124 +169,98 @@ export function RoleListView({ companyId, baseRoute }: RoleListViewProps) {
 
   return (
     <RouteGuard requiredPermission="role.read">
-      <div className="mx-auto max-w-7xl space-y-6">
-        {/* Header */}
+      <div className="space-y-6">
+        {/* Header Bar */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20 text-primary">
-              <Shield className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground">
-                Roles & Permission Access Control
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 border border-primary/20 text-primary">
+                <Shield className="h-4 w-4" />
+              </div>
+              <h1 className="text-xl font-bold tracking-tight text-foreground">
+                Role & Permission Administration
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Centralized hierarchy, role definitions, and permission matrix administration
-              </p>
             </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Manage hierarchical access control, assign permissions to roles, and define custom tenant roles.
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => loadRoles()}
-              className="rounded-xl border border-border/60 bg-card/60 p-2.5 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition"
+              onClick={() => void loadRoles()}
+              disabled={isLoading}
+              className="rounded-xl border border-border/60 bg-card/60 p-2 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition"
               title="Refresh roles"
             >
               <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
             </button>
+
             <PermissionGate permission="role.create">
               <button
-                id="create-role-btn"
+                id="create-custom-role-btn"
                 onClick={() => setIsCreateOpen(true)}
                 className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow transition hover:bg-primary/90"
               >
                 <Plus className="h-4 w-4" />
-                Add Custom Role
+                New Custom Role
               </button>
             </PermissionGate>
           </div>
         </div>
 
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[240px] max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        {/* Search & Filter Bar */}
+        <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-card/40 p-4 shadow-sm backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
-              id="role-search"
               type="text"
-              placeholder="Search by role name or description…"
+              placeholder="Search roles by title or description…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-xl border border-border/60 bg-card/40 pl-9 pr-4 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+              className="w-full rounded-xl border border-border/60 bg-muted/30 pl-9 pr-4 py-2 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/40"
             />
-            {search && (
-              <button
-                onClick={() => setSearch('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
           </div>
 
-          <div className="flex items-center rounded-xl border border-border/60 bg-card/40 p-1 text-xs">
-            <button
-              onClick={() => setScopeFilter('ALL')}
-              className={cn(
-                'rounded-lg px-3 py-1.5 font-medium transition',
-                scopeFilter === 'ALL'
-                  ? 'bg-primary text-primary-foreground font-semibold shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              All Scopes
-            </button>
-            <button
-              onClick={() => setScopeFilter('COMPANY')}
-              className={cn(
-                'rounded-lg px-3 py-1.5 font-medium transition',
-                scopeFilter === 'COMPANY'
-                  ? 'bg-primary text-primary-foreground font-semibold shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              Company
-            </button>
-            <button
-              onClick={() => setScopeFilter('PLATFORM')}
-              className={cn(
-                'rounded-lg px-3 py-1.5 font-medium transition',
-                scopeFilter === 'PLATFORM'
-                  ? 'bg-primary text-primary-foreground font-semibold shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              Platform
-            </button>
+          <div className="flex items-center gap-1.5 self-start sm:self-auto">
+            {(['ALL', 'PLATFORM', 'COMPANY'] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setScopeFilter(s)}
+                className={cn(
+                  'rounded-xl px-3 py-1.5 text-xs font-semibold transition',
+                  scopeFilter === s
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'bg-muted/40 text-muted-foreground hover:bg-muted/80 hover:text-foreground',
+                )}
+              >
+                {s === 'ALL' ? 'All Scopes' : s}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Error Alert */}
-        {error && (
-          <div className="flex items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-            <AlertCircle className="h-5 w-5 flex-shrink-0" />
-            <span>{error}</span>
-            <button onClick={() => loadRoles()} className="ml-auto text-xs underline font-semibold">
-              Retry
-            </button>
-          </div>
-        )}
-
         {/* Roles Table */}
         <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/40 shadow-sm backdrop-blur-xl">
-          {isLoading ? (
-            <div className="flex min-h-[300px] flex-col items-center justify-center gap-3 p-8">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-xs text-muted-foreground">Loading role definitions…</p>
+          {isLoading && roles.length === 0 ? (
+            <div className="flex min-h-[300px] flex-col items-center justify-center gap-2 p-8">
+              <Loader2 className="h-7 w-7 animate-spin text-primary" />
+              <p className="text-xs text-muted-foreground">Loading role matrix…</p>
+            </div>
+          ) : error ? (
+            <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 p-8 text-center">
+              <AlertCircle className="h-8 w-8 text-destructive" />
+              <p className="text-sm font-semibold text-destructive">{error}</p>
+              <button
+                onClick={() => void loadRoles()}
+                className="rounded-xl border border-border/60 px-4 py-1.5 text-xs font-medium hover:bg-muted"
+              >
+                Retry
+              </button>
             </div>
           ) : filteredRoles.length === 0 ? (
-            <div className="flex min-h-[260px] flex-col items-center justify-center gap-3 p-8 text-center text-muted-foreground">
-              <Shield className="h-10 w-10 opacity-30" />
+            <div className="flex min-h-[240px] flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
+              <Shield className="h-8 w-8 opacity-40 mb-1" />
               <p className="text-sm font-medium">No roles found matching your query</p>
               {search && (
                 <button
@@ -266,6 +280,8 @@ export function RoleListView({ companyId, baseRoute }: RoleListViewProps) {
                     <th className="px-5 py-3.5">Type & Scope</th>
                     <th className="px-5 py-3.5">Authority Level</th>
                     <th className="px-5 py-3.5">Permissions</th>
+                    <th className="px-5 py-3.5">Users</th>
+                    <th className="px-5 py-3.5">Created Date</th>
                     <th className="px-5 py-3.5 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -293,7 +309,7 @@ export function RoleListView({ companyId, baseRoute }: RoleListViewProps) {
                             <div className="flex items-center gap-2">
                               <span className="font-semibold text-foreground">{role.name}</span>
                             </div>
-                            <p className="text-xs text-muted-foreground line-clamp-1">
+                            <p className="text-xs text-muted-foreground line-clamp-1 max-w-xs">
                               {role.description ?? 'No description provided.'}
                             </p>
                           </div>
@@ -349,27 +365,64 @@ export function RoleListView({ companyId, baseRoute }: RoleListViewProps) {
                         </span>
                       </td>
 
+                      {/* User Count */}
+                      <td className="px-5 py-4">
+                        <span className="inline-flex items-center gap-1.5 rounded-xl border border-border/60 bg-muted/30 px-2.5 py-1 text-xs font-medium text-foreground">
+                          <Users className="h-3.5 w-3.5 text-primary" />
+                          {role.userCount ?? 0} members
+                        </span>
+                      </td>
+
+                      {/* Created Date */}
+                      <td className="px-5 py-4 text-xs text-muted-foreground font-mono">
+                        {new Date(role.createdAt).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </td>
+
                       {/* Actions */}
                       <td className="px-5 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-1.5">
                           <Link
                             href={`${baseRoute}/${role.id}`}
-                            className="inline-flex items-center gap-1 rounded-xl border border-border/60 bg-card/60 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition"
+                            className="inline-flex items-center gap-1 rounded-xl border border-border/60 bg-card/60 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted transition"
                           >
                             <span>Matrix</span>
                             <ArrowRight className="h-3 w-3 text-muted-foreground" />
                           </Link>
 
-                          {!role.isSystem && (
+                          {/* Edit Button */}
+                          <PermissionGate permission="role.update">
+                            <button
+                              onClick={() => openEditModal(role)}
+                              className="rounded-xl p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition"
+                              title="Edit role metadata"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                          </PermissionGate>
+
+                          {/* Delete or Protected Indicator */}
+                          {!role.isSystem ? (
                             <PermissionGate permission="role.delete">
                               <button
                                 onClick={() => setDeletingRoleId(role.id)}
                                 className="rounded-xl p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
-                                title="Delete role"
+                                title="Delete custom role"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Trash2 className="h-3.5 w-3.5" />
                               </button>
                             </PermissionGate>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-xl px-2 py-1 text-[10px] text-muted-foreground bg-muted/40 border border-border/40 font-medium"
+                              title="Protected system role — cannot be deleted"
+                            >
+                              <Lock className="h-2.5 w-2.5" />
+                              Protected
+                            </span>
                           )}
                         </div>
                       </td>
@@ -413,13 +466,13 @@ export function RoleListView({ companyId, baseRoute }: RoleListViewProps) {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. FLEET_SUPERVISOR"
+                    placeholder="e.g. FLEET_SUPERVISOR or Fleet Supervisor"
                     value={createName}
                     onChange={(e) => setCreateName(e.target.value)}
                     className="w-full rounded-xl border border-border/60 bg-muted/30 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
                   />
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    Uppercase alphanumeric characters and underscores recommended.
+                    Alphanumeric characters, spaces, hyphens, and underscores permitted.
                   </p>
                 </div>
 
@@ -477,6 +530,84 @@ export function RoleListView({ companyId, baseRoute }: RoleListViewProps) {
           </div>
         )}
 
+        {/* Edit Role Modal */}
+        {editingRole && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md rounded-2xl border border-border/80 bg-card p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <Edit2 className="h-5 w-5 text-primary" />
+                  Edit Role: {editingRole.name}
+                </h2>
+                <button
+                  onClick={() => setEditingRole(null)}
+                  className="rounded-lg p-1 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {updateError && (
+                <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>{updateError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleUpdate} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+                    Role Identifier / Name
+                  </label>
+                  <input
+                    type="text"
+                    disabled={editingRole.isSystem}
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full rounded-xl border border-border/60 bg-muted/30 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                  {editingRole.isSystem && (
+                    <p className="mt-1 text-[11px] text-amber-400">
+                      System role names cannot be renamed.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+                    Description
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Briefly describe the responsibilities of this role…"
+                    value={editDesc}
+                    onChange={(e) => setEditDesc(e.target.value)}
+                    className="w-full rounded-xl border border-border/60 bg-muted/30 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
+                  <button
+                    type="button"
+                    onClick={() => setEditingRole(null)}
+                    className="rounded-xl px-4 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted/40 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isUpdating}
+                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow transition hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {/* Delete Confirmation Modal */}
         {deletingRoleId && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -488,7 +619,7 @@ export function RoleListView({ companyId, baseRoute }: RoleListViewProps) {
                 Delete Custom Role?
               </h3>
               <p className="text-center text-xs text-muted-foreground mb-6">
-                This will permanently remove this role and unassign all permissions. This action cannot be undone.
+                This will permanently remove this custom role and unassign all permissions. This action cannot be undone.
               </p>
               <div className="flex items-center justify-center gap-3">
                 <button

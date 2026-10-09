@@ -73,6 +73,11 @@ async function bootstrap() {
       persistAuthorization: true,
     },
   });
+  SwaggerModule.setup(API_PREFIX, app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+  });
 
   await app.listen(port, '0.0.0.0');
 

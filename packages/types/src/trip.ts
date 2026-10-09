@@ -85,6 +85,8 @@ export interface TripDto extends TripSummaryDto {
   endOdometer?: number | null;
   notes?: string | null;
   statusHistory?: TripStatusHistoryDto[];
+  routePolyline?: string | null;
+  stops?: import('./dispatch').TripStopDto[];
   updatedAt: string;
 }
 

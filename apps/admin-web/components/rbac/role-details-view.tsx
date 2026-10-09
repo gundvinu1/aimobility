@@ -16,6 +16,10 @@ import {
   AlertCircle,
   Loader2,
   Info,
+  Users,
+  Search,
+  UserCheck,
+  Building,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { RouteGuard } from '@/components/auth/route-guard';
@@ -35,6 +39,10 @@ export function RoleDetailsView({ roleId, companyId, backRoute }: RoleDetailsVie
   const [assignedPermNames, setAssignedPermNames] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Tab & Search state
+  const [activeTab, setActiveTab] = useState<'permissions' | 'members'>('permissions');
+  const [permissionSearch, setPermissionSearch] = useState('');
 
   // Save state
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -64,16 +72,28 @@ export function RoleDetailsView({ roleId, companyId, backRoute }: RoleDetailsVie
     void loadData();
   }, [loadData]);
 
-  // Group permissions by module
+  // Group permissions by module with optional search filter
+  const filteredPermissions = useMemo(() => {
+    if (!permissionSearch.trim()) return allPermissions;
+    const query = permissionSearch.toLowerCase();
+    return allPermissions.filter(
+      (p) =>
+        p.name.toLowerCase().includes(query) ||
+        (p.description && p.description.toLowerCase().includes(query)) ||
+        (p.module && p.module.toLowerCase().includes(query)) ||
+        (p.action && p.action.toLowerCase().includes(query)),
+    );
+  }, [allPermissions, permissionSearch]);
+
   const moduleGroups = useMemo(() => {
     const groups: Record<string, PermissionDto[]> = {};
-    for (const p of allPermissions) {
+    for (const p of filteredPermissions) {
       const mod = p.module ?? 'GENERAL';
       if (!groups[mod]) groups[mod] = [];
       groups[mod]!.push(p);
     }
     return groups;
-  }, [allPermissions]);
+  }, [filteredPermissions]);
 
   const togglePermission = (permName: string) => {
     setAssignedPermNames((prev) => {
@@ -145,7 +165,7 @@ export function RoleDetailsView({ roleId, companyId, backRoute }: RoleDetailsVie
         {isLoading ? (
           <div className="flex min-h-[400px] flex-col items-center justify-center gap-3 rounded-2xl border border-border/60 bg-card/40 p-8 shadow-sm">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-xs text-muted-foreground">Loading permission matrix…</p>
+            <p className="text-xs text-muted-foreground">Loading role details…</p>
           </div>
         ) : error && !role ? (
           <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-6 text-sm text-destructive">
@@ -197,6 +217,12 @@ export function RoleDetailsView({ roleId, companyId, backRoute }: RoleDetailsVie
                       >
                         {role.scope} Scope
                       </span>
+                      {role.companyId && (
+                        <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border border-border/60 bg-muted/40">
+                          <Building className="h-3 w-3 text-muted-foreground" />
+                          Tenant Scoped
+                        </span>
+                      )}
                       <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-mono font-medium border border-border/60 bg-muted/40">
                         Authority Level {role.level}
                       </span>
@@ -212,13 +238,22 @@ export function RoleDetailsView({ roleId, companyId, backRoute }: RoleDetailsVie
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-2 text-center">
                     <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">
-                      Assigned
+                      Permissions
                     </p>
                     <p className="text-lg font-bold text-foreground font-mono">
                       {assignedPermNames.size}{' '}
                       <span className="text-xs font-normal text-muted-foreground">
                         / {allPermissions.length}
                       </span>
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-2 text-center">
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">
+                      Assigned Users
+                    </p>
+                    <p className="text-lg font-bold text-foreground font-mono">
+                      {role.users?.length ?? role.userCount ?? 0}
                     </p>
                   </div>
 
@@ -229,10 +264,40 @@ export function RoleDetailsView({ roleId, companyId, backRoute }: RoleDetailsVie
                       className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground shadow transition hover:bg-primary/90"
                     >
                       <Save className="h-4 w-4" />
-                      Save Permission Matrix
+                      Save Permissions
                     </button>
                   )}
                 </div>
+              </div>
+
+              {/* View Tabs */}
+              <div className="mt-6 flex border-b border-border/60 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('permissions')}
+                  className={cn(
+                    'flex items-center gap-2 pb-3 text-xs font-bold transition border-b-2 -mb-px',
+                    activeTab === 'permissions'
+                      ? 'border-primary text-foreground'
+                      : 'border-transparent text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <Shield className="h-4 w-4" />
+                  Permissions Matrix ({assignedPermNames.size})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('members')}
+                  className={cn(
+                    'flex items-center gap-2 pb-3 text-xs font-bold transition border-b-2 -mb-px',
+                    activeTab === 'members'
+                      ? 'border-primary text-foreground'
+                      : 'border-transparent text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <Users className="h-4 w-4" />
+                  Assigned Users ({role.users?.length ?? role.userCount ?? 0})
+                </button>
               </div>
             </div>
 
@@ -262,132 +327,236 @@ export function RoleDetailsView({ roleId, companyId, backRoute }: RoleDetailsVie
               </div>
             )}
 
-            {/* Permission Matrix by Module */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-primary" />
-                  Hierarchical Permission Matrix
-                </h2>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                    Granted
-                  </span>
-                  <span className="flex items-center gap-1 ml-2">
-                    <span className="h-2 w-2 rounded-full bg-muted-foreground/30" />
-                    Restricted
-                  </span>
-                </div>
-              </div>
+            {/* TAB 1: PERMISSION MATRIX */}
+            {activeTab === 'permissions' && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-primary" />
+                    Hierarchical Permission Matrix
+                  </h2>
 
-              {Object.entries(moduleGroups).map(([moduleName, perms]) => {
-                const allSelected = perms.every((p) => assignedPermNames.has(p.name));
-                const noneSelected = perms.every((p) => !assignedPermNames.has(p.name));
-                const countSelected = perms.filter((p) => assignedPermNames.has(p.name)).length;
-
-                return (
-                  <div
-                    key={moduleName}
-                    className="overflow-hidden rounded-2xl border border-border/60 bg-card/40 shadow-sm backdrop-blur-xl"
-                  >
-                    {/* Module Header Bar */}
-                    <div className="flex items-center justify-between border-b border-border/40 bg-muted/20 px-5 py-3">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold uppercase tracking-wider text-foreground">
-                          {moduleName} Module
-                        </span>
-                        <span className="rounded-full bg-primary/10 border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                          {countSelected} of {perms.length} active
-                        </span>
-                      </div>
-
-                      {canEdit && (
-                        <div className="flex items-center gap-2 text-xs">
-                          <button
-                            type="button"
-                            onClick={() => toggleModule(moduleName, true)}
-                            disabled={allSelected}
-                            className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-primary hover:bg-primary/10 disabled:opacity-30 transition"
-                          >
-                            Grant All
-                          </button>
-                          <span className="text-muted-foreground/40">|</span>
-                          <button
-                            type="button"
-                            onClick={() => toggleModule(moduleName, false)}
-                            disabled={noneSelected}
-                            className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-30 transition"
-                          >
-                            Revoke All
-                          </button>
-                        </div>
-                      )}
+                  <div className="flex items-center gap-3">
+                    {/* Search Input */}
+                    <div className="relative w-full sm:w-64">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                      <input
+                        type="text"
+                        placeholder="Search permissions…"
+                        value={permissionSearch}
+                        onChange={(e) => setPermissionSearch(e.target.value)}
+                        className="w-full rounded-xl border border-border/60 bg-muted/30 pl-9 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
                     </div>
 
-                    {/* Permissions Grid */}
-                    <div className="grid grid-cols-1 divide-y divide-border/20 sm:grid-cols-2 sm:divide-y-0 sm:divide-x lg:grid-cols-3">
-                      {perms.map((p) => {
-                        const isChecked = assignedPermNames.has(p.name);
-
-                        return (
-                          <div
-                            key={p.id}
-                            onClick={() => canEdit && togglePermission(p.name)}
-                            className={cn(
-                              'flex items-start gap-3 p-4 transition-colors',
-                              canEdit ? 'cursor-pointer hover:bg-muted/30' : 'cursor-default',
-                              isChecked ? 'bg-primary/[0.02]' : 'opacity-70',
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              disabled={!canEdit}
-                              onChange={() => togglePermission(p.name)}
-                              className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/40 cursor-pointer disabled:cursor-not-allowed"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-xs font-semibold text-foreground truncate">
-                                  {p.name}
-                                </span>
-                                {p.action && (
-                                  <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
-                                    {p.action}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug line-clamp-2">
-                                {p.description ?? 'Allows operational access to this resource.'}
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                        Granted
+                      </span>
+                      <span className="flex items-center gap-1 ml-2">
+                        <span className="h-2 w-2 rounded-full bg-muted-foreground/30" />
+                        Restricted
+                      </span>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-
-            {/* Bottom Save Bar (sticky on scroll if edited) */}
-            {canEdit && (
-              <div className="sticky bottom-6 z-20 flex items-center justify-between rounded-2xl border border-border/80 bg-card/90 p-4 shadow-xl backdrop-blur-xl">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Shield className="h-4 w-4 text-primary" />
-                  <span>
-                    Current selection:{' '}
-                    <strong className="text-foreground">{assignedPermNames.size}</strong> permissions
-                  </span>
                 </div>
-                <button
-                  onClick={() => setIsConfirmOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2 text-xs font-semibold text-primary-foreground shadow transition hover:bg-primary/90"
-                >
-                  <Save className="h-4 w-4" />
-                  Save Permission Matrix
-                </button>
+
+                {Object.keys(moduleGroups).length === 0 ? (
+                  <div className="rounded-2xl border border-border/60 bg-card/40 p-8 text-center text-xs text-muted-foreground">
+                    No permissions match your search criteria.
+                  </div>
+                ) : (
+                  Object.entries(moduleGroups).map(([moduleName, perms]) => {
+                    const allSelected = perms.every((p) => assignedPermNames.has(p.name));
+                    const noneSelected = perms.every((p) => !assignedPermNames.has(p.name));
+                    const countSelected = perms.filter((p) => assignedPermNames.has(p.name)).length;
+
+                    return (
+                      <div
+                        key={moduleName}
+                        className="overflow-hidden rounded-2xl border border-border/60 bg-card/40 shadow-sm backdrop-blur-xl"
+                      >
+                        {/* Module Header Bar */}
+                        <div className="flex items-center justify-between border-b border-border/40 bg-muted/20 px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs font-bold uppercase tracking-wider text-foreground">
+                              {moduleName} Module
+                            </span>
+                            <span className="rounded-full bg-primary/10 border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                              {countSelected} of {perms.length} active
+                            </span>
+                          </div>
+
+                          {canEdit && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <button
+                                type="button"
+                                onClick={() => toggleModule(moduleName, true)}
+                                disabled={allSelected}
+                                className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-primary hover:bg-primary/10 disabled:opacity-30 transition"
+                              >
+                                Grant All
+                              </button>
+                              <span className="text-muted-foreground/40">|</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleModule(moduleName, false)}
+                                disabled={noneSelected}
+                                className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-30 transition"
+                              >
+                                Revoke All
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Permissions Grid */}
+                        <div className="grid grid-cols-1 divide-y divide-border/20 sm:grid-cols-2 sm:divide-y-0 sm:divide-x lg:grid-cols-3">
+                          {perms.map((p) => {
+                            const isChecked = assignedPermNames.has(p.name);
+
+                            return (
+                              <div
+                                key={p.id}
+                                onClick={() => canEdit && togglePermission(p.name)}
+                                className={cn(
+                                  'flex items-start gap-3 p-4 transition-colors',
+                                  canEdit ? 'cursor-pointer hover:bg-muted/30' : 'cursor-default',
+                                  isChecked ? 'bg-primary/[0.02]' : 'opacity-70',
+                                )}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  disabled={!canEdit}
+                                  onChange={() => togglePermission(p.name)}
+                                  className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/40 cursor-pointer disabled:cursor-not-allowed"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-xs font-semibold text-foreground truncate">
+                                      {p.name}
+                                    </span>
+                                    {p.action && (
+                                      <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                                        {p.action}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug line-clamp-2">
+                                    {p.description ?? 'Allows operational access to this resource.'}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+
+                {/* Bottom Save Bar (sticky on scroll if edited) */}
+                {canEdit && (
+                  <div className="sticky bottom-6 z-20 flex items-center justify-between rounded-2xl border border-border/80 bg-card/90 p-4 shadow-xl backdrop-blur-xl">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Shield className="h-4 w-4 text-primary" />
+                      <span>
+                        Current selection:{' '}
+                        <strong className="text-foreground">{assignedPermNames.size}</strong> permissions
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setIsConfirmOpen(true)}
+                      className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2 text-xs font-semibold text-primary-foreground shadow transition hover:bg-primary/90"
+                    >
+                      <Save className="h-4 w-4" />
+                      Save Permissions
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: ASSIGNED MEMBERS / USERS */}
+            {activeTab === 'members' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                    <Users className="h-4 w-4 text-primary" />
+                    Assigned Users ({role.users?.length ?? 0})
+                  </h2>
+                </div>
+
+                {!role.users || role.users.length === 0 ? (
+                  <div className="rounded-2xl border border-border/60 bg-card/40 p-12 text-center shadow-sm">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground mb-3">
+                      <UserCheck className="h-6 w-6" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-foreground">No users assigned</h3>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                      There are currently no active users or company members assigned to the {role.name} role.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/40 shadow-sm backdrop-blur-xl">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="border-b border-border/60 bg-muted/20 text-muted-foreground font-semibold">
+                            <th className="py-3 px-4">User</th>
+                            <th className="py-3 px-4">Email Address</th>
+                            <th className="py-3 px-4">Account Status</th>
+                            <th className="py-3 px-4">Assigned / Joined</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/30">
+                          {role.users.map((user) => (
+                            <tr key={user.id} className="hover:bg-muted/30 transition">
+                              <td className="py-3.5 px-4 font-medium text-foreground">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 border border-primary/20 text-xs font-bold text-primary">
+                                    {user.firstName?.[0] ?? ''}
+                                    {user.lastName?.[0] ?? ''}
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold text-foreground">
+                                      {user.firstName} {user.lastName}
+                                    </p>
+                                    <p className="text-[10px] text-muted-foreground font-mono">ID: {user.id.slice(0, 8)}…</p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-3.5 px-4 text-muted-foreground font-mono">
+                                {user.email}
+                              </td>
+                              <td className="py-3.5 px-4">
+                                <span
+                                  className={cn(
+                                    'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border',
+                                    user.status === 'ACTIVE'
+                                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                      : 'bg-muted text-muted-foreground border-border/60',
+                                  )}
+                                >
+                                  {user.status}
+                                </span>
+                              </td>
+                              <td className="py-3.5 px-4 text-muted-foreground">
+                                {new Date(user.assignedAt).toLocaleDateString(undefined, {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

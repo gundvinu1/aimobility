@@ -12,6 +12,14 @@ import type {
   AssignVehiclePayload,
   DispatchTripPayload,
   UpdateTripStatusPayload,
+  TripStopDto,
+  CreateTripStopPayload,
+  UpdateTripStopPayload,
+  ReorderTripStopsPayload,
+  RouteCalculationResult,
+  EtaEstimateDto,
+  DispatchAvailabilityResponseDto,
+  DispatchAnalyticsDto,
 } from '@ai-mos/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -183,6 +191,136 @@ export async function updateTripStatus(
   });
 }
 
+export async function unassignDriver(
+  tripId: string,
+  payload: { notes?: string } = {},
+  options: TripFetchOptions = {},
+): Promise<TripDto> {
+  return tripFetch<TripDto>(`/trips/${tripId}/unassign-driver`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    ...options,
+  });
+}
+
+export async function unassignVehicle(
+  tripId: string,
+  payload: { notes?: string } = {},
+  options: TripFetchOptions = {},
+): Promise<TripDto> {
+  return tripFetch<TripDto>(`/trips/${tripId}/unassign-vehicle`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    ...options,
+  });
+}
+
+export async function getAvailability(
+  params: { startTime?: string; durationMinutes?: number } = {},
+  options: TripFetchOptions = {},
+): Promise<DispatchAvailabilityResponseDto> {
+  const sp = new URLSearchParams();
+  if (params.startTime) sp.set('startTime', params.startTime);
+  if (params.durationMinutes) sp.set('durationMinutes', String(params.durationMinutes));
+  const q = sp.toString();
+  return tripFetch<DispatchAvailabilityResponseDto>(`/trips/availability${q ? `?${q}` : ''}`, {
+    method: 'GET',
+    ...options,
+  });
+}
+
+export async function getDispatchAnalytics(
+  options: TripFetchOptions = {},
+): Promise<DispatchAnalyticsDto> {
+  return tripFetch<DispatchAnalyticsDto>('/trips/dispatch-analytics', {
+    method: 'GET',
+    ...options,
+  });
+}
+
+export async function getTripStops(
+  tripId: string,
+  options: TripFetchOptions = {},
+): Promise<TripStopDto[]> {
+  return tripFetch<TripStopDto[]>(`/trips/${tripId}/stops`, {
+    method: 'GET',
+    ...options,
+  });
+}
+
+export async function addTripStop(
+  tripId: string,
+  payload: CreateTripStopPayload,
+  options: TripFetchOptions = {},
+): Promise<TripStopDto> {
+  return tripFetch<TripStopDto>(`/trips/${tripId}/stops`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    ...options,
+  });
+}
+
+export async function updateTripStop(
+  tripId: string,
+  stopId: string,
+  payload: UpdateTripStopPayload,
+  options: TripFetchOptions = {},
+): Promise<TripStopDto> {
+  return tripFetch<TripStopDto>(`/trips/${tripId}/stops/${stopId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+    ...options,
+  });
+}
+
+export async function reorderTripStops(
+  tripId: string,
+  payload: ReorderTripStopsPayload,
+  options: TripFetchOptions = {},
+): Promise<TripStopDto[]> {
+  return tripFetch<TripStopDto[]>(`/trips/${tripId}/stops/reorder`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+    ...options,
+  });
+}
+
+export async function deleteTripStop(
+  tripId: string,
+  stopId: string,
+  options: TripFetchOptions = {},
+): Promise<{ success: boolean; message: string }> {
+  return tripFetch<{ success: boolean; message: string }>(`/trips/${tripId}/stops/${stopId}`, {
+    method: 'DELETE',
+    ...options,
+  });
+}
+
+export async function calculateTripRoute(
+  tripId: string,
+  options: TripFetchOptions = {},
+): Promise<RouteCalculationResult> {
+  return tripFetch<RouteCalculationResult>(`/trips/${tripId}/calculate-route`, {
+    method: 'POST',
+    ...options,
+  });
+}
+
+export async function getTripEta(
+  tripId: string,
+  params: { currentLatitude?: number; currentLongitude?: number } = {},
+  options: TripFetchOptions = {},
+): Promise<EtaEstimateDto> {
+  const sp = new URLSearchParams();
+  if (params.currentLatitude !== undefined) sp.set('currentLatitude', String(params.currentLatitude));
+  if (params.currentLongitude !== undefined) sp.set('currentLongitude', String(params.currentLongitude));
+  const q = sp.toString();
+  return tripFetch<EtaEstimateDto>(`/trips/${tripId}/eta${q ? `?${q}` : ''}`, {
+    method: 'GET',
+    ...options,
+  });
+}
+
 export async function deleteTrip(
   id: string,
   options: TripFetchOptions = {},
@@ -206,13 +344,36 @@ export const tripApi = {
     updateTrip(id, payload, { accessToken, companyId }),
   assignDriver: (accessToken: string, companyId: string, tripId: string, payload: AssignDriverPayload) =>
     assignDriver(tripId, payload, { accessToken, companyId }),
+  unassignDriver: (accessToken: string, companyId: string, tripId: string, payload?: { notes?: string }) =>
+    unassignDriver(tripId, payload, { accessToken, companyId }),
   assignVehicle: (accessToken: string, companyId: string, tripId: string, payload: AssignVehiclePayload) =>
     assignVehicle(tripId, payload, { accessToken, companyId }),
+  unassignVehicle: (accessToken: string, companyId: string, tripId: string, payload?: { notes?: string }) =>
+    unassignVehicle(tripId, payload, { accessToken, companyId }),
+  availability: (accessToken: string, companyId: string, params?: { startTime?: string; durationMinutes?: number }) =>
+    getAvailability(params, { accessToken, companyId }),
   dispatch: (accessToken: string, companyId: string, tripId: string, payload?: DispatchTripPayload) =>
     dispatchTrip(tripId, payload, { accessToken, companyId }),
   updateStatus: (accessToken: string, companyId: string, tripId: string, payload: UpdateTripStatusPayload) =>
     updateTripStatus(tripId, payload, { accessToken, companyId }),
+  stops: (accessToken: string, companyId: string, tripId: string) =>
+    getTripStops(tripId, { accessToken, companyId }),
+  addStop: (accessToken: string, companyId: string, tripId: string, payload: CreateTripStopPayload) =>
+    addTripStop(tripId, payload, { accessToken, companyId }),
+  updateStop: (accessToken: string, companyId: string, tripId: string, stopId: string, payload: UpdateTripStopPayload) =>
+    updateTripStop(tripId, stopId, payload, { accessToken, companyId }),
+  reorderStops: (accessToken: string, companyId: string, tripId: string, payload: ReorderTripStopsPayload) =>
+    reorderTripStops(tripId, payload, { accessToken, companyId }),
+  deleteStop: (accessToken: string, companyId: string, tripId: string, stopId: string) =>
+    deleteTripStop(tripId, stopId, { accessToken, companyId }),
+  calculateRoute: (accessToken: string, companyId: string, tripId: string) =>
+    calculateTripRoute(tripId, { accessToken, companyId }),
+  getEta: (accessToken: string, companyId: string, tripId: string, params?: { currentLatitude?: number; currentLongitude?: number }) =>
+    getTripEta(tripId, params, { accessToken, companyId }),
+  dispatchAnalytics: (accessToken: string, companyId: string) =>
+    getDispatchAnalytics({ accessToken, companyId }),
   delete: (accessToken: string, companyId: string, id: string) =>
     deleteTrip(id, { accessToken, companyId }),
 };
+
 

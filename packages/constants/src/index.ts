@@ -13,3 +13,7 @@ export * from './driver';
 export * from './booking';
 export * from './trip';
 export * from './permissions';
+export * from './tracking';
+export * from './alert';
+export * from './fleet-management';
+export * from './dispatch';

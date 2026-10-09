@@ -96,6 +96,10 @@ export const rbacApi = {
     return rbacFetch('/rbac/permissions', { accessToken });
   },
 
+  getPermission(accessToken: string, id: string): Promise<PermissionDto> {
+    return rbacFetch(`/rbac/permissions/${id}`, { accessToken });
+  },
+
   getRolePermissions(accessToken: string, roleId: string, companyId?: string): Promise<PermissionDto[]> {
     return rbacFetch(`/rbac/roles/${roleId}/permissions`, { accessToken, companyId });
   },
@@ -113,4 +117,43 @@ export const rbacApi = {
       companyId,
     });
   },
+
+  // Company Member Roles
+  getMemberRole(accessToken: string, companyId: string, memberId: string): Promise<MemberRoleInfo> {
+    return rbacFetch(`/companies/${companyId}/members/${memberId}/role`, { accessToken, companyId });
+  },
+
+  updateMemberRole(
+    accessToken: string,
+    companyId: string,
+    memberId: string,
+    role: string,
+  ): Promise<{ memberId: string; userId: string; role: string; message: string }> {
+    return rbacFetch(`/companies/${companyId}/members/${memberId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+      accessToken,
+      companyId,
+    });
+  },
 };
+
+export interface MemberRoleInfo {
+  memberId: string;
+  userId: string;
+  user: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+  };
+  role: string;
+  status: string;
+  rolesAvailable: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    level: number;
+    isSystem: boolean;
+  }>;
+}

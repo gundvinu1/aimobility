@@ -12,7 +12,6 @@ import {
   Req,
   HttpCode,
   HttpStatus,
-  ParseUUIDPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -40,15 +39,15 @@ function getMeta(req: Request) {
   };
 }
 
-@ApiTags('RBAC Management')
+// ─── Roles Controller (supports /api/v1/roles and /api/v1/rbac/roles) ──────────
+
+@ApiTags('Roles Management')
 @ApiBearerAuth()
-@Controller('rbac')
-export class RbacController {
+@Controller(['roles', 'rbac/roles'])
+export class RolesController {
   constructor(private readonly rbacService: RbacService) {}
 
-  // ─── List Roles ─────────────────────────────────────────────────────────────
-
-  @Get('roles')
+  @Get()
   @ApiOperation({ summary: 'List roles (platform or scoped by tenant context)' })
   @ApiResponse({ status: 200, description: 'Role list with hierarchy and permission counts' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
@@ -62,36 +61,21 @@ export class RbacController {
     return this.rbacService.listRoles(user, companyId, query);
   }
 
-  // ─── List Permissions ───────────────────────────────────────────────────────
-
-  @Get('permissions')
-  @ApiOperation({ summary: 'List all system permissions (matrix catalog)' })
-  @ApiResponse({ status: 200, description: 'List of all system permissions grouped by module' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden' })
-  async listPermissions(@CurrentUser() user: AuthUser) {
-    return this.rbacService.listPermissions(user);
-  }
-
-  // ─── Get Role By ID ─────────────────────────────────────────────────────────
-
-  @Get('roles/:id')
-  @ApiOperation({ summary: 'Get role details and its permissions' })
-  @ApiParam({ name: 'id', description: 'Role UUID' })
-  @ApiResponse({ status: 200, description: 'Role details with assigned permissions' })
+  @Get(':id')
+  @ApiOperation({ summary: 'Get role details with assigned permissions and users' })
+  @ApiParam({ name: 'id', description: 'Role UUID or name' })
+  @ApiResponse({ status: 200, description: 'Role details with assigned permissions and members' })
   @ApiResponse({ status: 404, description: 'Role not found' })
   @ApiHeader({ name: COMPANY_HEADER, description: 'Optional active company context', required: false })
   async getRole(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @CurrentUser() user: AuthUser,
     @Headers('x-company-id') companyId?: string,
   ) {
     return this.rbacService.getRole(id, user, companyId);
   }
 
-  // ─── Create Custom Role ─────────────────────────────────────────────────────
-
-  @Post('roles')
+  @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a custom role' })
   @ApiResponse({ status: 201, description: 'Custom role created successfully' })
@@ -107,10 +91,8 @@ export class RbacController {
     return this.rbacService.createRole(dto, user, companyId, getMeta(req));
   }
 
-  // ─── Update Role ────────────────────────────────────────────────────────────
-
-  @Patch('roles/:id')
-  @ApiOperation({ summary: 'Update role metadata (system roles can only update description)' })
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update role metadata (system roles cannot be renamed)' })
   @ApiParam({ name: 'id', description: 'Role UUID' })
   @ApiResponse({ status: 200, description: 'Role updated successfully' })
   @ApiResponse({ status: 400, description: 'Cannot rename system role' })
@@ -118,7 +100,7 @@ export class RbacController {
   @ApiResponse({ status: 404, description: 'Role not found' })
   @ApiHeader({ name: COMPANY_HEADER, description: 'Optional active company context', required: false })
   async updateRole(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body() dto: UpdateRoleDto,
     @CurrentUser() user: AuthUser,
     @Headers('x-company-id') companyId: string | undefined,
@@ -127,9 +109,7 @@ export class RbacController {
     return this.rbacService.updateRole(id, dto, user, companyId, getMeta(req));
   }
 
-  // ─── Delete Role ────────────────────────────────────────────────────────────
-
-  @Delete('roles/:id')
+  @Delete(':id')
   @ApiOperation({ summary: 'Delete custom role (system roles cannot be deleted)' })
   @ApiParam({ name: 'id', description: 'Role UUID' })
   @ApiResponse({ status: 200, description: 'Role deleted successfully' })
@@ -138,7 +118,7 @@ export class RbacController {
   @ApiResponse({ status: 404, description: 'Role not found' })
   @ApiHeader({ name: COMPANY_HEADER, description: 'Optional active company context', required: false })
   async deleteRole(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @CurrentUser() user: AuthUser,
     @Headers('x-company-id') companyId: string | undefined,
     @Req() req: Request,
@@ -146,33 +126,46 @@ export class RbacController {
     return this.rbacService.deleteRole(id, user, companyId, getMeta(req));
   }
 
-  // ─── Get Role Permissions ───────────────────────────────────────────────────
-
-  @Get('roles/:id/permissions')
+  @Get(':id/permissions')
   @ApiOperation({ summary: 'Get permissions assigned to a role' })
   @ApiParam({ name: 'id', description: 'Role UUID' })
   @ApiResponse({ status: 200, description: 'Role permission list' })
   @ApiResponse({ status: 404, description: 'Role not found' })
   @ApiHeader({ name: COMPANY_HEADER, description: 'Optional active company context', required: false })
   async getRolePermissions(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @CurrentUser() user: AuthUser,
     @Headers('x-company-id') companyId?: string,
   ) {
     return this.rbacService.getRolePermissions(id, user, companyId);
   }
 
-  // ─── Update Role Permissions ────────────────────────────────────────────────
-
-  @Put('roles/:id/permissions')
-  @ApiOperation({ summary: 'Update permissions for a role (replaces existing assignments)' })
+  @Put(':id/permissions')
+  @ApiOperation({ summary: 'Update permissions for a role (PUT)' })
   @ApiParam({ name: 'id', description: 'Role UUID' })
   @ApiResponse({ status: 200, description: 'Role permissions updated successfully' })
   @ApiResponse({ status: 403, description: 'Forbidden (privilege escalation prevention)' })
   @ApiResponse({ status: 404, description: 'Role not found' })
   @ApiHeader({ name: COMPANY_HEADER, description: 'Optional active company context', required: false })
-  async updateRolePermissions(
-    @Param('id', ParseUUIDPipe) id: string,
+  async putRolePermissions(
+    @Param('id') id: string,
+    @Body() dto: UpdateRolePermissionsDto,
+    @CurrentUser() user: AuthUser,
+    @Headers('x-company-id') companyId: string | undefined,
+    @Req() req: Request,
+  ) {
+    return this.rbacService.updateRolePermissions(id, dto, user, companyId, getMeta(req));
+  }
+
+  @Patch(':id/permissions')
+  @ApiOperation({ summary: 'Update permissions for a role (PATCH)' })
+  @ApiParam({ name: 'id', description: 'Role UUID' })
+  @ApiResponse({ status: 200, description: 'Role permissions updated successfully' })
+  @ApiResponse({ status: 403, description: 'Forbidden (privilege escalation prevention)' })
+  @ApiResponse({ status: 404, description: 'Role not found' })
+  @ApiHeader({ name: COMPANY_HEADER, description: 'Optional active company context', required: false })
+  async patchRolePermissions(
+    @Param('id') id: string,
     @Body() dto: UpdateRolePermissionsDto,
     @CurrentUser() user: AuthUser,
     @Headers('x-company-id') companyId: string | undefined,
@@ -181,3 +174,33 @@ export class RbacController {
     return this.rbacService.updateRolePermissions(id, dto, user, companyId, getMeta(req));
   }
 }
+
+// ─── Permissions Controller (supports /api/v1/permissions & /api/v1/rbac/permissions)
+
+@ApiTags('Permissions Management')
+@ApiBearerAuth()
+@Controller(['permissions', 'rbac/permissions'])
+export class PermissionsController {
+  constructor(private readonly rbacService: RbacService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'List all system permissions (matrix catalog)' })
+  @ApiResponse({ status: 200, description: 'List of all system permissions' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  async listPermissions(@CurrentUser() user: AuthUser) {
+    return this.rbacService.listPermissions(user);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get permission details by ID or name' })
+  @ApiParam({ name: 'id', description: 'Permission UUID or name (e.g. employee.read)' })
+  @ApiResponse({ status: 200, description: 'Permission details with assigned roles' })
+  @ApiResponse({ status: 404, description: 'Permission not found' })
+  async getPermission(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.rbacService.getPermission(id, user);
+  }
+}
+
+// Backwards compatibility alias
+export const RbacController = RolesController;

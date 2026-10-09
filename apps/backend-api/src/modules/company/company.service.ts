@@ -20,6 +20,7 @@ import type {
   CompanyInvitationDto,
 } from '@ai-mos/types';
 import type { CompanyRole, MembershipStatus, CompanyStatus } from '@prisma/client';
+import type { AuthUser } from '../auth/types/auth-user.type';
 import * as crypto from 'crypto';
 
 // ─── Minimal DB delegate types ────────────────────────────────────────────────
@@ -404,6 +405,177 @@ export class CompanyService {
     });
 
     return this.mapMembership(updated);
+  }
+
+  // ─── GET MEMBER ROLE ────────────────────────────────────────────────────────
+  async getMemberRole(
+    companyId: string,
+    memberId: string,
+    caller: AuthUser,
+  ) {
+    const membership = await (this.db as any).userCompany.findFirst({
+      where: {
+        companyId,
+        OR: [{ id: memberId }, { userId: memberId }],
+      },
+      include: {
+        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+      },
+    });
+
+    if (!membership) throw new NotFoundException('Member not found');
+
+    const isSuperAdmin = caller.roles.includes('SUPER_ADMIN');
+    let callerLevel = 10;
+    if (isSuperAdmin) {
+      callerLevel = 100;
+    } else {
+      const callerMembership = await (this.db as any).userCompany.findFirst({
+        where: { userId: caller.userId, companyId, status: 'ACTIVE' },
+      });
+      const cRole = callerMembership?.role ?? 'MEMBER';
+      const levelMap: Record<string, number> = {
+        OWNER: 80,
+        ADMIN: 60,
+        MANAGER: 40,
+        DISPATCHER: 30,
+        ACCOUNTANT: 30,
+        DRIVER: 20,
+        CUSTOMER: 10,
+        MEMBER: 10,
+      };
+      callerLevel = levelMap[cRole] ?? 10;
+    }
+
+    const roles = await (this.db as any).role.findMany({
+      where: {
+        OR: [
+          { scope: 'COMPANY', companyId: null },
+          { companyId },
+        ],
+      },
+      orderBy: [{ level: 'desc' }, { name: 'asc' }],
+    });
+
+    const rolesAvailable = roles
+      .filter((r: any) => isSuperAdmin || r.level < callerLevel || (callerLevel === 80 && r.level <= 80))
+      .map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        level: r.level,
+        isSystem: r.isSystem,
+      }));
+
+    return {
+      memberId: membership.id,
+      userId: membership.userId,
+      user: membership.user,
+      role: membership.role,
+      status: membership.status,
+      rolesAvailable,
+    };
+  }
+
+  // ─── UPDATE MEMBER ROLE ─────────────────────────────────────────────────────
+  async updateMemberRole(
+    companyId: string,
+    memberId: string,
+    newRole: string,
+    requestingUserId: string,
+    requestingRole: CompanyRole,
+    meta: AuditMeta,
+  ) {
+    const membership = await (this.db as any).userCompany.findFirst({
+      where: {
+        companyId,
+        OR: [{ id: memberId }, { userId: memberId }],
+      },
+      include: {
+        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+      },
+    });
+
+    if (!membership) throw new NotFoundException('Member not found');
+
+    const levelMap: Record<string, number> = {
+      OWNER: 80,
+      ADMIN: 60,
+      MANAGER: 40,
+      DISPATCHER: 30,
+      ACCOUNTANT: 30,
+      DRIVER: 20,
+      CUSTOMER: 10,
+      MEMBER: 10,
+    };
+
+    let targetRoleLevel = levelMap[newRole];
+    if (targetRoleLevel === undefined) {
+      const customRole = await (this.db as any).role.findFirst({
+        where: { name: newRole, OR: [{ companyId }, { companyId: null }] },
+      });
+      if (!customRole) {
+        throw new BadRequestException(`Role "${newRole}" does not exist in this organization`);
+      }
+      targetRoleLevel = customRole.level;
+    }
+
+    const callerLevel = levelMap[requestingRole] ?? 10;
+
+    // Self-escalation prevention
+    if (requestingUserId === membership.userId && newRole !== membership.role) {
+      const currentLevel = levelMap[membership.role] ?? 10;
+      if (targetRoleLevel > currentLevel) {
+        throw new ForbiddenException('Cannot promote yourself to a higher role');
+      }
+    }
+
+    // Hierarchy check: non-superadmin cannot assign role with level >= callerLevel (except OWNER can assign up to OWNER)
+    if (requestingRole !== 'OWNER' && targetRoleLevel >= callerLevel) {
+      throw new ForbiddenException(
+        `Cannot assign role "${newRole}" with authority level equal to or higher than your own (${callerLevel})`,
+      );
+    }
+
+    // Protect the last OWNER
+    if (newRole !== 'OWNER' && membership.role === 'OWNER') {
+      const ownerCount = await (this.db as any).userCompany.count({
+        where: { companyId, role: 'OWNER', status: 'ACTIVE' },
+      });
+      if (ownerCount <= 1) {
+        throw new ForbiddenException('Cannot demote the last owner. Transfer ownership first.');
+      }
+    }
+
+    const previousRole = membership.role;
+    const updated = await (this.db as any).userCompany.update({
+      where: { id: membership.id },
+      data: { role: newRole },
+      include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
+    });
+
+    await this.audit({
+      action: COMPANY_AUDIT_EVENTS.COMPANY_MEMBER_ROLE_CHANGED,
+      entityType: 'UserCompany',
+      entityId: membership.id,
+      companyId,
+      userId: requestingUserId,
+      metadata: {
+        targetUserId: membership.userId,
+        previousRole,
+        newRole,
+      },
+      ...meta,
+    });
+
+    return {
+      memberId: updated.id,
+      userId: updated.userId,
+      user: updated.user,
+      role: updated.role,
+      status: updated.status,
+      message: `Role for ${updated.user.firstName} ${updated.user.lastName} changed to ${newRole}`,
+    };
   }
 
   async removeMember(

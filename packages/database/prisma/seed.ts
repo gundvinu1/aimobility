@@ -1,3 +1,4 @@
+/// <reference types="node" />
 /**
  * AI-MOS Database Seed — Module 2: Authentication + RBAC
  *
@@ -150,6 +151,51 @@ const PERMISSIONS = [
   { name: 'trip.dispatch',             description: 'Dispatch trips to drivers',             module: 'TRIP',     action: 'DISPATCH' },
   { name: 'trip.status.update',        description: 'Update trip operational status',        module: 'TRIP',     action: 'UPDATE' },
   { name: 'trip.cancel',               description: 'Cancel trips',                          module: 'TRIP',     action: 'UPDATE' },
+
+  // Module 9 — Fleet Tracking & Telemetry
+  { name: 'fleet.tracking.read',       description: 'Access fleet tracking map',             module: 'TRACKING', action: 'READ' },
+  { name: 'fleet.tracking.live',       description: 'Receive live real-time fleet updates',   module: 'TRACKING', action: 'READ' },
+  { name: 'vehicle.telemetry.read',    description: 'Read vehicle telemetry history',        module: 'TRACKING', action: 'READ' },
+  { name: 'vehicle.telemetry.write',   description: 'Ingest vehicle telemetry data',          module: 'TRACKING', action: 'CREATE' },
+  { name: 'vehicle.location.read',     description: 'Read vehicle current location',          module: 'TRACKING', action: 'READ' },
+  { name: 'vehicle.location.live',     description: 'Receive live vehicle location stream',   module: 'TRACKING', action: 'READ' },
+
+  // Module 10 — Geofencing & Fleet Alerts
+  { name: 'geofence.read',             description: 'View geofences and vehicle assignments', module: 'GEOFENCE', action: 'READ' },
+  { name: 'geofence.create',           description: 'Create new geofences',                    module: 'GEOFENCE', action: 'CREATE' },
+  { name: 'geofence.update',           description: 'Update geofence parameters',             module: 'GEOFENCE', action: 'UPDATE' },
+  { name: 'geofence.delete',           description: 'Delete or deactivate geofences',          module: 'GEOFENCE', action: 'DELETE' },
+  { name: 'alert.read',                description: 'View fleet safety alerts',               module: 'ALERT',    action: 'READ' },
+  { name: 'alert.acknowledge',         description: 'Acknowledge operational fleet alerts',    module: 'ALERT',    action: 'UPDATE' },
+  { name: 'alert.resolve',             description: 'Resolve or dismiss fleet alerts',         module: 'ALERT',    action: 'UPDATE' },
+  { name: 'alert.configure',           description: 'Configure alert rules and thresholds',   module: 'ALERT',    action: 'UPDATE' },
+
+  // Module 11 — Fuel, Maintenance, Work Orders, Vendors, Expenses & TCO
+  { name: 'fuel.read',                 description: 'View fuel transactions and fuel analytics',      module: 'FLEET_MANAGEMENT', action: 'READ' },
+  { name: 'fuel.create',               description: 'Record fuel purchase transactions',              module: 'FLEET_MANAGEMENT', action: 'CREATE' },
+  { name: 'fuel.update',               description: 'Update fuel transaction details',                module: 'FLEET_MANAGEMENT', action: 'UPDATE' },
+  { name: 'fuel.delete',               description: 'Delete fuel transactions',                       module: 'FLEET_MANAGEMENT', action: 'DELETE' },
+  { name: 'maintenance.read',          description: 'View preventive schedules and service records',  module: 'FLEET_MANAGEMENT', action: 'READ' },
+  { name: 'maintenance.create',        description: 'Create preventive schedules and service records',module: 'FLEET_MANAGEMENT', action: 'CREATE' },
+  { name: 'maintenance.update',        description: 'Update preventive schedules',                    module: 'FLEET_MANAGEMENT', action: 'UPDATE' },
+  { name: 'maintenance.delete',        description: 'Delete maintenance schedules',                   module: 'FLEET_MANAGEMENT', action: 'DELETE' },
+  { name: 'maintenance.configure',     description: 'Configure preventive maintenance policies',      module: 'FLEET_MANAGEMENT', action: 'UPDATE' },
+  { name: 'workorder.read',            description: 'View maintenance work orders',                   module: 'FLEET_MANAGEMENT', action: 'READ' },
+  { name: 'workorder.create',          description: 'Create maintenance work orders',                 module: 'FLEET_MANAGEMENT', action: 'CREATE' },
+  { name: 'workorder.update',          description: 'Update work order details and lifecycle status', module: 'FLEET_MANAGEMENT', action: 'UPDATE' },
+  { name: 'workorder.delete',          description: 'Delete work orders',                             module: 'FLEET_MANAGEMENT', action: 'DELETE' },
+  { name: 'vendor.read',               description: 'View vendors and suppliers',                     module: 'FLEET_MANAGEMENT', action: 'READ' },
+  { name: 'vendor.create',             description: 'Create vendors and service centers',             module: 'FLEET_MANAGEMENT', action: 'CREATE' },
+  { name: 'vendor.update',             description: 'Update vendor profiles',                         module: 'FLEET_MANAGEMENT', action: 'UPDATE' },
+  { name: 'vendor.delete',             description: 'Delete or deactivate vendors',                   module: 'FLEET_MANAGEMENT', action: 'DELETE' },
+  { name: 'invoice.read',              description: 'View vendor invoices',                          module: 'FLEET_MANAGEMENT', action: 'READ' },
+  { name: 'invoice.create',            description: 'Record vendor invoices',                         module: 'FLEET_MANAGEMENT', action: 'CREATE' },
+  { name: 'invoice.update',            description: 'Update vendor invoice status',                   module: 'FLEET_MANAGEMENT', action: 'UPDATE' },
+  { name: 'expense.read',              description: 'View vehicle expense ledger',                    module: 'FLEET_MANAGEMENT', action: 'READ' },
+  { name: 'expense.create',            description: 'Record vehicle expenses',                        module: 'FLEET_MANAGEMENT', action: 'CREATE' },
+  { name: 'expense.update',            description: 'Update vehicle expenses',                        module: 'FLEET_MANAGEMENT', action: 'UPDATE' },
+  { name: 'expense.delete',            description: 'Delete vehicle expenses',                        module: 'FLEET_MANAGEMENT', action: 'DELETE' },
+  { name: 'tco.read',                  description: 'View fleet TCO and operating cost analytics',    module: 'FLEET_MANAGEMENT', action: 'READ' },
 ] as const;
 
 /** Role → permissions mapping */
@@ -179,6 +225,20 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'trip.read', 'trip.create', 'trip.update', 'trip.delete',
     'trip.assign.driver', 'trip.assign.vehicle', 'trip.dispatch',
     'trip.status.update', 'trip.cancel',
+    // Module 9
+    'fleet.tracking.read', 'fleet.tracking.live', 'vehicle.telemetry.read',
+    'vehicle.telemetry.write', 'vehicle.location.read', 'vehicle.location.live',
+    // Module 10
+    'geofence.read', 'geofence.create', 'geofence.update', 'geofence.delete',
+    'alert.read', 'alert.acknowledge', 'alert.resolve', 'alert.configure',
+    // Module 11
+    'fuel.read', 'fuel.create', 'fuel.update', 'fuel.delete',
+    'maintenance.read', 'maintenance.create', 'maintenance.update', 'maintenance.delete', 'maintenance.configure',
+    'workorder.read', 'workorder.create', 'workorder.update', 'workorder.delete',
+    'vendor.read', 'vendor.create', 'vendor.update', 'vendor.delete',
+    'invoice.read', 'invoice.create', 'invoice.update',
+    'expense.read', 'expense.create', 'expense.update', 'expense.delete',
+    'tco.read',
   ],
   OWNER: [
     'user.read', 'user.write',
@@ -205,6 +265,20 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'trip.read', 'trip.create', 'trip.update', 'trip.delete',
     'trip.assign.driver', 'trip.assign.vehicle', 'trip.dispatch',
     'trip.status.update', 'trip.cancel',
+    // Module 9
+    'fleet.tracking.read', 'fleet.tracking.live', 'vehicle.telemetry.read',
+    'vehicle.telemetry.write', 'vehicle.location.read', 'vehicle.location.live',
+    // Module 10
+    'geofence.read', 'geofence.create', 'geofence.update', 'geofence.delete',
+    'alert.read', 'alert.acknowledge', 'alert.resolve', 'alert.configure',
+    // Module 11
+    'fuel.read', 'fuel.create', 'fuel.update', 'fuel.delete',
+    'maintenance.read', 'maintenance.create', 'maintenance.update', 'maintenance.delete', 'maintenance.configure',
+    'workorder.read', 'workorder.create', 'workorder.update', 'workorder.delete',
+    'vendor.read', 'vendor.create', 'vendor.update', 'vendor.delete',
+    'invoice.read', 'invoice.create', 'invoice.update',
+    'expense.read', 'expense.create', 'expense.update', 'expense.delete',
+    'tco.read',
   ],
   ADMIN: [
     'user.read', 'user.write',
@@ -230,6 +304,20 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'trip.read', 'trip.create', 'trip.update', 'trip.delete',
     'trip.assign.driver', 'trip.assign.vehicle', 'trip.dispatch',
     'trip.status.update', 'trip.cancel',
+    // Module 9
+    'fleet.tracking.read', 'fleet.tracking.live', 'vehicle.telemetry.read',
+    'vehicle.location.read', 'vehicle.location.live',
+    // Module 10
+    'geofence.read', 'geofence.create', 'geofence.update', 'geofence.delete',
+    'alert.read', 'alert.acknowledge', 'alert.resolve', 'alert.configure',
+    // Module 11
+    'fuel.read', 'fuel.create', 'fuel.update', 'fuel.delete',
+    'maintenance.read', 'maintenance.create', 'maintenance.update', 'maintenance.delete', 'maintenance.configure',
+    'workorder.read', 'workorder.create', 'workorder.update', 'workorder.delete',
+    'vendor.read', 'vendor.create', 'vendor.update', 'vendor.delete',
+    'invoice.read', 'invoice.create', 'invoice.update',
+    'expense.read', 'expense.create', 'expense.update', 'expense.delete',
+    'tco.read',
   ],
   MANAGER: [
     'user.read', 'profile.read', 'profile.write', 'company.read', 'company.members.read',
@@ -241,6 +329,20 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'booking.read', 'booking.create', 'booking.update', 'booking.confirm', 'booking.cancel',
     'trip.read', 'trip.create', 'trip.update', 'trip.assign.driver', 'trip.assign.vehicle',
     'trip.dispatch', 'trip.status.update', 'trip.cancel',
+    // Module 9
+    'fleet.tracking.read', 'fleet.tracking.live', 'vehicle.telemetry.read',
+    'vehicle.location.read', 'vehicle.location.live',
+    // Module 10
+    'geofence.read', 'geofence.create', 'geofence.update',
+    'alert.read', 'alert.acknowledge', 'alert.resolve',
+    // Module 11
+    'fuel.read', 'fuel.create', 'fuel.update',
+    'maintenance.read', 'maintenance.create', 'maintenance.update',
+    'workorder.read', 'workorder.create', 'workorder.update',
+    'vendor.read', 'vendor.create', 'vendor.update',
+    'invoice.read', 'invoice.create',
+    'expense.read', 'expense.create',
+    'tco.read',
   ],
   DISPATCHER: [
     'company.read', 'profile.read', 'profile.write',
@@ -248,14 +350,25 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'booking.read', 'booking.create', 'booking.update', 'booking.confirm', 'booking.cancel',
     'trip.read', 'trip.create', 'trip.update', 'trip.assign.driver', 'trip.assign.vehicle',
     'trip.dispatch', 'trip.status.update', 'trip.cancel',
+    // Module 9
+    'fleet.tracking.read', 'fleet.tracking.live', 'vehicle.location.read', 'vehicle.location.live',
+    // Module 10
+    'geofence.read', 'alert.read', 'alert.acknowledge',
   ],
   ACCOUNTANT: [
     'company.read', 'profile.read', 'profile.write',
     'booking.read', 'trip.read',
+    // Module 11
+    'fuel.read', 'maintenance.read', 'workorder.read',
+    'vendor.read', 'invoice.read', 'invoice.create', 'invoice.update',
+    'expense.read', 'expense.create', 'expense.update', 'expense.delete',
+    'tco.read',
   ],
   DRIVER: [
     'profile.read', 'profile.write',
     'trip.read', 'trip.status.update', 'driver.duty.update', 'vehicle.read',
+    // Module 11
+    'fuel.read', 'fuel.create',
   ],
   CUSTOMER: [
     'profile.read', 'profile.write',
@@ -282,22 +395,32 @@ async function main() {
   console.log('📋 Seeding roles...');
   const roleMap: Record<string, string> = {};
   for (const role of ROLES) {
-    const r = await prisma.role.upsert({
-      where:  { name: role.name },
-      update: {
-        description: role.description,
-        scope: role.scope,
-        level: role.level,
-        isSystem: role.isSystem,
-      },
-      create: {
-        name: role.name,
-        description: role.description,
-        scope: role.scope,
-        level: role.level,
-        isSystem: role.isSystem,
-      },
+    const existing = await prisma.role.findFirst({
+      where: { name: role.name, companyId: null },
     });
+    let r;
+    if (existing) {
+      r = await prisma.role.update({
+        where: { id: existing.id },
+        data: {
+          description: role.description,
+          scope: role.scope,
+          level: role.level,
+          isSystem: role.isSystem,
+        },
+      });
+    } else {
+      r = await prisma.role.create({
+        data: {
+          name: role.name,
+          description: role.description,
+          scope: role.scope,
+          level: role.level,
+          isSystem: role.isSystem,
+          companyId: null,
+        },
+      });
+    }
     roleMap[role.name] = r.id;
     console.log(`  ✅ ${role.name.padEnd(12)} [${role.scope} - Level ${role.level}]`);
   }
@@ -372,6 +495,162 @@ async function main() {
     await prisma.userRole.create({ data: { userId: user.id, roleId } });
 
     console.log(`  ✅ ${u.role.padEnd(12)} → ${u.email}`);
+  }
+
+  // ── 5. Module 11 Sample Data ─────────────────────────────────────────────
+  console.log('\n⛽ Seeding Module 11 sample records...');
+  try {
+    const company = await prisma.company.findFirst();
+    if (company) {
+      const vehicle = await prisma.vehicle.findFirst({ where: { companyId: company.id } });
+      if (vehicle) {
+        // Find or create sample vendor
+        let vendor = await prisma.vendor.findFirst({
+          where: { companyId: company.id, name: 'Apex Fleet Services & Parts' },
+        });
+        if (!vendor) {
+          vendor = await prisma.vendor.create({
+            data: {
+              companyId: company.id,
+              name: 'Apex Fleet Services & Parts',
+              type: 'SERVICE_CENTER',
+              contactPerson: 'Marcus Vance',
+              email: 'support@apexfleet.example',
+              phone: '+1-555-0199',
+              address: '450 Industrial Parkway, Tech District',
+              isActive: true,
+              notes: 'Primary preferred fleet service center',
+            },
+          });
+        }
+
+        // Check if sample fuel transaction exists
+        const existingFuel = await prisma.fuelTransaction.findFirst({
+          where: { companyId: company.id, reference: 'REC-2026-10-001' },
+        });
+        if (!existingFuel) {
+          await prisma.fuelTransaction.create({
+            data: {
+              companyId: company.id,
+              vehicleId: vehicle.id,
+              vendorId: vendor.id,
+              quantityLiters: 65.5,
+              pricePerLiter: 1.65,
+              totalAmount: 108.08,
+              fuelType: 'DIESEL',
+              odometer: vehicle.odometerReading ? vehicle.odometerReading : 12450,
+              fuelLevelBefore: 15.0,
+              fuelLevelAfter: 95.0,
+              transactionSource: 'MANUAL',
+              transactionDate: new Date(),
+              reference: 'REC-2026-10-001',
+              notes: 'Standard highway refueling',
+            },
+          });
+        }
+
+        // Check if sample maintenance schedule exists
+        let sched = await prisma.maintenanceSchedule.findFirst({
+          where: { companyId: company.id, vehicleId: vehicle.id, serviceType: 'OIL_CHANGE' },
+        });
+        if (!sched) {
+          sched = await prisma.maintenanceSchedule.create({
+            data: {
+              companyId: company.id,
+              vehicleId: vehicle.id,
+              serviceType: 'OIL_CHANGE',
+              description: 'Synthetic Engine Oil & Filter Change',
+              intervalKm: 10000,
+              intervalDays: 180,
+              lastServiceOdometer: 10000,
+              lastServiceDate: new Date(Date.now() - 90 * 86400000),
+              nextDueOdometer: 20000,
+              nextDueDate: new Date(Date.now() + 90 * 86400000),
+              isActive: true,
+            },
+          });
+        }
+
+        // Check if sample work order exists
+        let wo = await prisma.workOrder.findFirst({
+          where: { companyId: company.id, title: 'Scheduled 10,000km Engine Maintenance' },
+        });
+        if (!wo) {
+          wo = await prisma.workOrder.create({
+            data: {
+              companyId: company.id,
+              vehicleId: vehicle.id,
+              vendorId: vendor.id,
+              scheduleId: sched.id,
+              title: 'Scheduled 10,000km Engine Maintenance',
+              description: 'Regular scheduled inspection and full synthetic oil replacement.',
+              priority: 'MEDIUM',
+              status: 'COMPLETED',
+              estimatedCost: 150.0,
+              actualCost: 165.0,
+              openedAt: new Date(Date.now() - 5 * 86400000),
+              completedAt: new Date(Date.now() - 4 * 86400000),
+            },
+          });
+
+          await prisma.workOrderItem.create({
+            data: {
+              workOrderId: wo.id,
+              type: 'PARTS',
+              description: 'High-performance synthetic oil filter',
+              quantity: 1,
+              unitCost: 25.0,
+              totalCost: 25.0,
+            },
+          });
+        }
+
+        // Check if sample invoice exists
+        const existingInv = await prisma.vendorInvoice.findFirst({
+          where: { companyId: company.id, invoiceNumber: 'INV-2026-APEX-099' },
+        });
+        if (!existingInv) {
+          await prisma.vendorInvoice.create({
+            data: {
+              companyId: company.id,
+              vendorId: vendor.id,
+              vehicleId: vehicle.id,
+              workOrderId: wo.id,
+              invoiceNumber: 'INV-2026-APEX-099',
+              invoiceDate: new Date(),
+              subtotal: 150.0,
+              tax: 15.0,
+              total: 165.0,
+              status: 'PAID',
+              notes: 'Settled via corporate fleet account',
+            },
+          });
+        }
+
+        // Check if sample expense exists
+        const existingExp = await prisma.vehicleExpense.findFirst({
+          where: { companyId: company.id, reference: 'POLICY-ANNUAL-2026' },
+        });
+        if (!existingExp) {
+          await prisma.vehicleExpense.create({
+            data: {
+              companyId: company.id,
+              vehicleId: vehicle.id,
+              category: 'INSURANCE',
+              amount: 450.0,
+              date: new Date(Date.now() - 30 * 86400000),
+              reference: 'POLICY-ANNUAL-2026',
+              description: 'Comprehensive commercial fleet insurance premium',
+              source: 'DIRECT_EXPENSE',
+            },
+          });
+        }
+
+        console.log('  ✅ Module 11 sample records seeded successfully.');
+      }
+    }
+  } catch (err: any) {
+    console.warn('  ⚠️ Note: Could not seed Module 11 demo records:', err.message);
   }
 
   // ── Summary ───────────────────────────────────────────────────────────────

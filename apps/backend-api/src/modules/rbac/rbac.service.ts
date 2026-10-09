@@ -14,6 +14,7 @@ import { UpdateRolePermissionsDto } from './dto/update-role-permissions.dto';
 import { ListRolesDto } from './dto/list-roles.dto';
 import { AUTH_AUDIT_EVENTS } from '@ai-mos/constants';
 import { ROLE_PERMISSIONS } from '@ai-mos/constants';
+import type { RoleMemberDto, RoleDetailDto, RoleSummaryDto, PermissionDto } from '@ai-mos/types';
 
 export interface AuditMeta {
   ipAddress?: string;
@@ -21,13 +22,15 @@ export interface AuditMeta {
   requestId?: string;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class RbacService {
   private readonly logger = new Logger(RbacService.name);
 
   constructor(private readonly db: DatabaseService) {}
 
-  // ─── Helper: Get Caller Level and Allowed Permissions ────────────────────────
+  // ─── Helper: Get Caller Context and Permissions ──────────────────────────────
 
   private async getCallerContext(user: AuthUser, companyId?: string): Promise<{
     callerLevel: number;
@@ -86,7 +89,7 @@ export class RbacService {
     }
 
     // Resolve caller's effective permissions from DB role + fallback to constants
-    const dbRole = await (this.db as any).role.findUnique({
+    const dbRole = await (this.db as any).role.findFirst({
       where: { name: callerRole },
       include: { permissions: { include: { permission: true } } },
     });
@@ -104,7 +107,6 @@ export class RbacService {
 
   private async resolvePermissions(inputs: string[]): Promise<any[]> {
     if (!inputs || inputs.length === 0) return [];
-    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const idInputs = inputs.filter((p) => UUID_REGEX.test(p));
     const nameInputs = inputs.filter((p) => !UUID_REGEX.test(p));
 
@@ -121,7 +123,7 @@ export class RbacService {
 
   // ─── List Roles ─────────────────────────────────────────────────────────────
 
-  async listRoles(user: AuthUser, companyId?: string, query?: ListRolesDto) {
+  async listRoles(user: AuthUser, companyId?: string, query?: ListRolesDto): Promise<RoleSummaryDto[]> {
     const ctx = await this.getCallerContext(user, companyId);
 
     // Permission check: role.read or role.write or SUPER_ADMIN
@@ -134,8 +136,8 @@ export class RbacService {
     }
 
     // Tenant isolation:
-    // SUPER_ADMIN can view all roles.
-    // Company user can view COMPANY scope roles + their company-specific custom roles.
+    // SUPER_ADMIN can view all roles or filter.
+    // Tenant admin/user sees platform roles available to company + their company custom roles.
     const where: Record<string, unknown> = {};
 
     if (!ctx.isSuperAdmin) {
@@ -143,6 +145,10 @@ export class RbacService {
         { scope: 'COMPANY', companyId: null },
         ...(companyId ? [{ companyId }] : []),
       ];
+    } else {
+      if (companyId) {
+        where['OR'] = [{ companyId: null }, { companyId }];
+      }
     }
 
     if (query?.scope) {
@@ -150,9 +156,13 @@ export class RbacService {
     }
 
     if (query?.search) {
-      where['OR'] = [
-        { name: { contains: query.search, mode: 'insensitive' } },
-        { description: { contains: query.search, mode: 'insensitive' } },
+      where['AND'] = [
+        {
+          OR: [
+            { name: { contains: query.search, mode: 'insensitive' } },
+            { description: { contains: query.search, mode: 'insensitive' } },
+          ],
+        },
       ];
     }
 
@@ -164,6 +174,23 @@ export class RbacService {
       orderBy: [{ level: 'desc' }, { name: 'asc' }],
     });
 
+    // If active company context, tally memberships from user_companies
+    const companyRoleCounts: Record<string, number> = {};
+    if (companyId) {
+      try {
+        const memberCounts = await (this.db as any).userCompany.groupBy({
+          by: ['role'],
+          where: { companyId, status: 'ACTIVE' },
+          _count: { role: true },
+        });
+        for (const mc of memberCounts) {
+          companyRoleCounts[mc.role] = mc._count.role;
+        }
+      } catch (e) {
+        // Fallback gracefully
+      }
+    }
+
     return roles.map((r: any) => ({
       id: r.id,
       name: r.name,
@@ -173,7 +200,7 @@ export class RbacService {
       isSystem: r.isSystem,
       companyId: r.companyId,
       permissionCount: r._count.permissions,
-      userCount: r._count.users,
+      userCount: r._count.users + (companyRoleCounts[r.name] ?? 0),
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     }));
@@ -181,7 +208,7 @@ export class RbacService {
 
   // ─── Get Role By ID ─────────────────────────────────────────────────────────
 
-  async getRole(id: string, user: AuthUser, companyId?: string) {
+  async getRole(id: string, user: AuthUser, companyId?: string): Promise<RoleDetailDto> {
     const ctx = await this.getCallerContext(user, companyId);
 
     if (
@@ -192,31 +219,100 @@ export class RbacService {
       throw new ForbiddenException('Insufficient permissions to view role details');
     }
 
-    const role = await (this.db as any).role.findUnique({
-      where: { id },
+    const role = await (this.db as any).role.findFirst({
+      where: UUID_REGEX.test(id) ? { id } : { name: id },
       include: {
         permissions: {
           include: { permission: true },
+        },
+        users: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                status: true,
+                createdAt: true,
+              },
+            },
+          },
         },
       },
     });
 
     if (!role) {
-      throw new NotFoundException(`Role with ID ${id} not found`);
+      throw new NotFoundException(`Role with ID or name "${id}" not found`);
     }
 
-    // Cross-company access check
+    // Tenant isolation check
     if (!ctx.isSuperAdmin && role.companyId && role.companyId !== companyId) {
       throw new ForbiddenException('Access denied: role belongs to another organization');
     }
 
-    const permissions = role.permissions.map((rp: any) => ({
+    const permissions: PermissionDto[] = role.permissions.map((rp: any) => ({
       id: rp.permission.id,
       name: rp.permission.name,
       description: rp.permission.description,
       module: rp.permission.module,
       action: rp.permission.action,
     }));
+
+    // Collect direct users
+    const directUsers: RoleMemberDto[] = (role.users || []).map((ur: any) => ({
+      id: ur.user.id,
+      email: ur.user.email,
+      firstName: ur.user.firstName,
+      lastName: ur.user.lastName,
+      status: ur.user.status,
+      assignedAt: ur.assignedAt ? ur.assignedAt.toISOString() : ur.user.createdAt.toISOString(),
+    }));
+
+    // If company context exists, also retrieve active members mapped through user_companies
+    let companyUsers: RoleMemberDto[] = [];
+    const effectiveCompanyId = role.companyId ?? companyId;
+    if (effectiveCompanyId) {
+      try {
+        const matchingMembers = await (this.db as any).userCompany.findMany({
+          where: {
+            companyId: effectiveCompanyId,
+            role: role.name,
+            status: 'ACTIVE',
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                status: true,
+              },
+            },
+          },
+        });
+        companyUsers = matchingMembers.map((m: any) => ({
+          id: m.user.id,
+          email: m.user.email,
+          firstName: m.user.firstName,
+          lastName: m.user.lastName,
+          status: m.user.status,
+          assignedAt: m.joinedAt ? m.joinedAt.toISOString() : new Date().toISOString(),
+        }));
+      } catch (err) {
+        // Fallback
+      }
+    }
+
+    // Deduplicate users by id
+    const userMap = new Map<string, RoleMemberDto>();
+    for (const u of [...directUsers, ...companyUsers]) {
+      if (!userMap.has(u.id)) {
+        userMap.set(u.id, u);
+      }
+    }
+    const users = Array.from(userMap.values());
 
     return {
       id: role.id,
@@ -228,6 +324,8 @@ export class RbacService {
       companyId: role.companyId,
       permissionCount: permissions.length,
       permissions,
+      userCount: users.length,
+      users,
       createdAt: role.createdAt.toISOString(),
       updatedAt: role.updatedAt.toISOString(),
     };
@@ -247,15 +345,26 @@ export class RbacService {
       throw new ForbiddenException('Insufficient permissions to create custom roles');
     }
 
-    // Role name uniqueness
-    const existing = await (this.db as any).role.findUnique({
-      where: { name: dto.name },
+    const scope = ctx.isSuperAdmin ? (dto.scope ?? 'PLATFORM') : 'COMPANY';
+    const roleCompanyId = ctx.isSuperAdmin ? (dto.companyId ?? null) : (companyId ?? null);
+
+    // 1. Prevent collision with system roles
+    const systemRole = await (this.db as any).role.findFirst({
+      where: { name: dto.name, isSystem: true },
     });
-    if (existing) {
-      throw new ConflictException(`Role with name "${dto.name}" already exists`);
+    if (systemRole) {
+      throw new ConflictException(`Cannot create a custom role with reserved system role name "${dto.name}"`);
     }
 
-    // Hierarchy check: custom role level must be strictly less than creator's level
+    // 2. Prevent duplicate role name in the same tenant/company
+    const existing = await (this.db as any).role.findFirst({
+      where: { name: dto.name, companyId: roleCompanyId },
+    });
+    if (existing) {
+      throw new ConflictException(`Role with name "${dto.name}" already exists in this organization`);
+    }
+
+    // 3. Hierarchy check: custom role level must be strictly less than creator's level
     const targetLevel = dto.level ?? Math.max(10, ctx.callerLevel - 10);
     if (!ctx.isSuperAdmin && targetLevel >= ctx.callerLevel) {
       throw new ForbiddenException(
@@ -263,7 +372,7 @@ export class RbacService {
       );
     }
 
-    // Privilege Escalation Prevention:
+    // 4. Privilege Escalation Prevention:
     // Caller cannot grant permissions they do not possess themselves
     const assignedPermIds: string[] = [];
     if (dto.permissionIds && dto.permissionIds.length > 0) {
@@ -278,9 +387,6 @@ export class RbacService {
         assignedPermIds.push(p.id);
       }
     }
-
-    const scope = ctx.isSuperAdmin ? (dto.scope ?? 'PLATFORM') : 'COMPANY';
-    const roleCompanyId = ctx.isSuperAdmin ? null : (companyId ?? null);
 
     const createdRole = await (this.db as any).$transaction(async (tx: any) => {
       const role = await tx.role.create({
@@ -354,14 +460,23 @@ export class RbacService {
 
     // Tenant check
     if (!ctx.isSuperAdmin && role.companyId && role.companyId !== companyId) {
-      throw new ForbiddenException('Access denied: role belongs to another company');
+      throw new ForbiddenException('Access denied: role belongs to another organization');
     }
 
-    // If renaming, check uniqueness
+    // If renaming, check collisions
     if (dto.name && dto.name !== role.name) {
-      const existing = await (this.db as any).role.findUnique({ where: { name: dto.name } });
+      const systemRole = await (this.db as any).role.findFirst({
+        where: { name: dto.name, isSystem: true },
+      });
+      if (systemRole) {
+        throw new ConflictException(`Cannot rename to reserved system role name "${dto.name}"`);
+      }
+
+      const existing = await (this.db as any).role.findFirst({
+        where: { name: dto.name, companyId: role.companyId, id: { not: id } },
+      });
       if (existing) {
-        throw new ConflictException(`Role with name "${dto.name}" already exists`);
+        throw new ConflictException(`Role with name "${dto.name}" already exists in this organization`);
       }
     }
 
@@ -464,6 +579,49 @@ export class RbacService {
       module: p.module ?? 'GENERAL',
       action: p.action ?? 'MANAGE',
     }));
+  }
+
+  // ─── Get Permission By ID or Name ───────────────────────────────────────────
+
+  async getPermission(id: string, user: AuthUser) {
+    const ctx = await this.getCallerContext(user);
+
+    if (
+      !ctx.isSuperAdmin &&
+      !ctx.allowedPermissions.has('permission.read') &&
+      !ctx.allowedPermissions.has('role.read')
+    ) {
+      throw new ForbiddenException('Insufficient permissions to view permission details');
+    }
+
+    const permission = await (this.db as any).permission.findFirst({
+      where: UUID_REGEX.test(id) ? { id } : { name: id },
+      include: {
+        roles: {
+          include: { role: true },
+        },
+      },
+    });
+
+    if (!permission) {
+      throw new NotFoundException(`Permission with ID or name "${id}" not found`);
+    }
+
+    return {
+      id: permission.id,
+      name: permission.name,
+      description: permission.description,
+      module: permission.module ?? 'GENERAL',
+      action: permission.action ?? 'MANAGE',
+      roles: permission.roles.map((r: any) => ({
+        id: r.role.id,
+        name: r.role.name,
+        scope: r.role.scope,
+        isSystem: r.role.isSystem,
+      })),
+      createdAt: permission.createdAt.toISOString(),
+      updatedAt: permission.updatedAt.toISOString(),
+    };
   }
 
   // ─── Get Role Permissions ───────────────────────────────────────────────────

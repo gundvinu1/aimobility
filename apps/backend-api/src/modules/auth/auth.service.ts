@@ -78,7 +78,7 @@ export class AuthService {
 
     const passwordHash = await this.passwords.hash(dto.password);
 
-    let defaultRole = await (this.db as unknown as RoleDb).role.findUnique({ where: { name: ROLES.CUSTOMER } });
+    let defaultRole = await (this.db as unknown as RoleDb).role.findFirst({ where: { name: ROLES.CUSTOMER } });
     if (!defaultRole) {
       defaultRole = await (this.db as unknown as RoleDb).role.create({
         data: { name: ROLES.CUSTOMER, description: 'Default customer role' },
@@ -260,7 +260,7 @@ export class AuthService {
 
     if (!companyId) {
       const topPlatformRole = user.roles[0]?.role.name || 'CUSTOMER';
-      const dbRole = await (this.db as any).role.findUnique({
+      const dbRole = await (this.db as any).role.findFirst({
         where: { name: topPlatformRole },
         include: { permissions: { include: { permission: true } } },
       });
@@ -280,7 +280,7 @@ export class AuthService {
 
     if (!membership) {
       const topPlatformRole = user.roles[0]?.role.name || 'CUSTOMER';
-      const dbRole = await (this.db as any).role.findUnique({
+      const dbRole = await (this.db as any).role.findFirst({
         where: { name: topPlatformRole },
         include: { permissions: { include: { permission: true } } },
       });
@@ -306,7 +306,7 @@ export class AuthService {
       else if (platformRoleNames.includes('MANAGER')) effectiveRole = 'MANAGER';
     }
 
-    const dbRole = await (this.db as any).role.findUnique({
+    const dbRole = await (this.db as any).role.findFirst({
       where: { name: effectiveRole },
       include: { permissions: { include: { permission: true } } },
     });
@@ -607,6 +607,7 @@ export class AuthService {
 interface FindOptions { where?: Record<string, unknown>; include?: Record<string, unknown>; data?: Record<string, unknown> }
 interface Delegate {
   findUnique: (opts: FindOptions) => Promise<unknown>;
+  findFirst: (opts?: FindOptions) => Promise<unknown>;
   findMany: (opts?: FindOptions) => Promise<unknown[]>;
   create: (opts: FindOptions) => Promise<unknown>;
   update: (opts: FindOptions) => Promise<unknown>;

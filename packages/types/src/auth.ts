@@ -30,7 +30,17 @@ export interface RoleDto {
   permissionCount?: number;
 }
 
-/** Detailed role with full permissions list */
+/** Member assigned to a role */
+export interface RoleMemberDto {
+  id: UUID;
+  email: string;
+  firstName: string;
+  lastName: string;
+  status: UserStatus;
+  assignedAt: string;
+}
+
+/** Detailed role with full permissions list and assigned members */
 export interface RoleDetailDto {
   id: UUID;
   name: string;
@@ -41,8 +51,21 @@ export interface RoleDetailDto {
   companyId?: UUID | null;
   permissionCount: number;
   permissions: PermissionDto[];
+  userCount?: number;
+  users?: RoleMemberDto[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** Role with permissions and members */
+export interface RoleWithPermissionsDto extends RoleDetailDto {}
+
+/** Role Permission junction shape */
+export interface RolePermissionDto {
+  roleId: UUID;
+  permissionId: UUID;
+  assignedAt?: string;
+  permission?: PermissionDto;
 }
 
 /** Summary role for lists */
@@ -55,7 +78,9 @@ export interface RoleSummaryDto {
   isSystem: boolean;
   companyId?: UUID | null;
   permissionCount: number;
+  userCount?: number;
   createdAt: string;
+  updatedAt?: string;
 }
 
 /** Permission shape */
